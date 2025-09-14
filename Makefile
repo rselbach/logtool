@@ -1,4 +1,6 @@
 GO ?= go
+# Disable VCS stamping to avoid errors when not in a git repo
+GOFLAGS ?= -buildvcs=false
 PREFIX ?= /usr/local
 BINDIR ?= $(PREFIX)/bin
 SHAREDIR ?= /usr/share/logtool
@@ -57,13 +59,13 @@ print-config:
 build: build-server build-importer build-pwhash
 
 build-server:
-	$(GO) build -o ./bin/logtool-server ./cmd/server
+	$(GO) build $(GOFLAGS) -o ./bin/logtool-server ./cmd/server
 
 build-importer:
-	$(GO) build -o ./bin/logtool-importer ./cmd/importer
+	$(GO) build $(GOFLAGS) -o ./bin/logtool-importer ./cmd/importer
 
 build-pwhash:
-	$(GO) build -o ./bin/logtool-pwhash ./cmd/pwhash
+	$(GO) build $(GOFLAGS) -o ./bin/logtool-pwhash ./cmd/pwhash
 
 install: build install-server install-importer install-ui
 	# Ensure data directory exists with secure perms; set owner if provided
