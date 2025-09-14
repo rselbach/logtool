@@ -40,7 +40,6 @@ help:
 	@echo "  ADDR=$(ADDR)  TZ=$(TZ)  ACCESS_LOG=$(ACCESS_LOG)  ERROR_LOG=$(ERROR_LOG)"
 
 print-config:
-	@$(MAKE) -s help | sed -n 's/^Variables.*//p;q' >/dev/null || true
 	@echo "PREFIX=$(PREFIX)"
 	@echo "BINDIR=$(BINDIR)"
 	@echo "SHAREDIR=$(SHAREDIR)"
