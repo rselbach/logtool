@@ -46,6 +46,8 @@
     let from, to;
     if (preset === '24h') { to = now; from = new Date(now.getTime() - 24*3600*1000); }
     else if (preset === '7d') { to = now; from = new Date(now.getTime() - 7*86400*1000); }
+    else if (preset === '2w') { to = now; from = new Date(now.getTime() - 14*86400*1000); }
+    else if (preset === '1m') { to = now; from = new Date(now.getTime() - 30*86400*1000); }
     else if (preset === 'today') {
       to = now;
       from = new Date(now); from.setHours(0,0,0,0);
