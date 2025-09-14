@@ -46,6 +46,8 @@
     let from, to;
     if (preset === '24h') { to = now; from = new Date(now.getTime() - 24*3600*1000); }
     else if (preset === '7d') { to = now; from = new Date(now.getTime() - 7*86400*1000); }
+    else if (preset === '2w') { to = now; from = new Date(now.getTime() - 14*86400*1000); }
+    else if (preset === '1m') { to = now; from = new Date(now.getTime() - 30*86400*1000); }
     else if (preset === 'today') {
       to = now;
       from = new Date(now); from.setHours(0,0,0,0);
@@ -350,18 +352,34 @@
   }
 
   function init(){
-    // Default custom inputs to last 7d for easy edits
+    // Restore saved UI settings
+    const savedPreset = localStorage.getItem('lt_range_preset');
+    const savedBucket = localStorage.getItem('lt_bucket');
+    if (savedPreset) {
+      const sel = $('#rangePreset');
+      if ([...sel.options].some(o=>o.value===savedPreset)) {
+        sel.value = savedPreset;
+        setCustomInputsVisible(savedPreset === 'custom');
+      }
+    }
+    if (savedBucket) {
+      const sel = $('#bucket');
+      if ([...sel.options].some(o=>o.value===savedBucket)) sel.value = savedBucket;
+    }
+
+    // Default custom inputs to last 7d for easy edits (does not override preset)
     const now = new Date(); const from7 = new Date(now.getTime()-7*86400*1000);
     setCustomFromTo({from:from7, to:now});
 
     $('#rangePreset').addEventListener('change', e => {
       const preset = e.target.value;
       const custom = preset === 'custom';
+      localStorage.setItem('lt_range_preset', preset);
       setCustomInputsVisible(custom);
       if (!custom) refresh();
     });
     $('#refresh').addEventListener('click', () => refresh());
-    $('#bucket').addEventListener('change', () => refresh());
+    $('#bucket').addEventListener('change', (e) => { localStorage.setItem('lt_bucket', e.target.value); refresh(); });
     window.addEventListener('resize', () => {
       // Chart.js is responsive; no heavy redraw needed. Debounce optional updates.
       clearTimeout(window.__rt); window.__rt = setTimeout(()=>{ if(reqChart) reqChart.resize(); if(errChart) errChart.resize(); }, 150);
