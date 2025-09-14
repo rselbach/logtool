@@ -10,6 +10,7 @@ import (
     "fmt"
     "io"
     "net/http"
+    "reflect"
     "strconv"
     "strings"
     "time"
@@ -50,6 +51,7 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
     mux.HandleFunc("/api/status", s.wrap(s.handleStatus))
     mux.HandleFunc("/api/requests", s.wrap(s.handleRequests))
     mux.HandleFunc("/api/errors", s.wrap(s.handleErrors))
+    mux.HandleFunc("/api/debug/dbinfo", s.wrap(s.handleDebugDBInfo))
     // Session login/logout (not wrapped to avoid redirect loops)
     mux.HandleFunc("/login", s.handleLogin)
     mux.HandleFunc("/logout", s.handleLogout)
@@ -264,6 +266,18 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) error {
 // Helpers
 func writeJSON(w http.ResponseWriter, v interface{}) error {
     w.Header().Set("Content-Type", "application/json")
+    // Ensure empty slices/maps encode as [] / {} (not null)
+    rv := reflect.ValueOf(v)
+    switch rv.Kind() {
+    case reflect.Slice:
+        if rv.IsNil() {
+            v = reflect.MakeSlice(rv.Type(), 0, 0).Interface()
+        }
+    case reflect.Map:
+        if rv.IsNil() {
+            v = reflect.MakeMap(rv.Type()).Interface()
+        }
+    }
     enc := json.NewEncoder(w)
     enc.SetIndent("", " ")
     return enc.Encode(v)
@@ -527,6 +541,71 @@ func (s *Server) handleErrors(w http.ResponseWriter, r *http.Request) error {
         out = append(out, rr)
     }
     return writeJSON(w, out)
+}
+
+// Debug: return DB path and basic counts/ranges to help diagnose empty results.
+func (s *Server) handleDebugDBInfo(w http.ResponseWriter, r *http.Request) error {
+    // Resolve DB file path via PRAGMA database_list
+    var dbPath string
+    if rows, err := s.db.Query(`PRAGMA database_list;`); err == nil {
+        defer rows.Close()
+        for rows.Next() {
+            var seq int
+            var name, file string
+            if err := rows.Scan(&seq, &name, &file); err == nil {
+                if name == "main" { dbPath = file }
+            }
+        }
+    }
+    type Range struct {
+        Total int64 `json:"total"`
+        Parsed int64 `json:"parsed,omitempty"`
+        Unparsed int64 `json:"unparsed,omitempty"`
+        MinUnix int64 `json:"min_unix"`
+        MaxUnix int64 `json:"max_unix"`
+        MinISO  *string `json:"min_iso,omitempty"`
+        MaxISO  *string `json:"max_iso,omitempty"`
+    }
+    var req, errr Range
+    // Requests
+    _ = s.db.QueryRow(`SELECT COUNT(*) FROM request_events`).Scan(&req.Total)
+    _ = s.db.QueryRow(`SELECT COUNT(*) FROM request_events WHERE method IS NOT NULL AND method != '' AND path IS NOT NULL AND path != ''`).Scan(&req.Parsed)
+    req.Unparsed = req.Total - req.Parsed
+    _ = s.db.QueryRow(`SELECT COALESCE(MIN(ts_unix),0), COALESCE(MAX(ts_unix),0) FROM request_events`).Scan(&req.MinUnix, &req.MaxUnix)
+    if req.MinUnix > 0 { s := time.Unix(req.MinUnix, 0).UTC().Format(time.RFC3339); req.MinISO = &s }
+    if req.MaxUnix > 0 { s := time.Unix(req.MaxUnix, 0).UTC().Format(time.RFC3339); req.MaxISO = &s }
+    // Errors
+    _ = s.db.QueryRow(`SELECT COUNT(*) FROM error_events`).Scan(&errr.Total)
+    _ = s.db.QueryRow(`SELECT COALESCE(MIN(ts_unix),0), COALESCE(MAX(ts_unix),0) FROM error_events`).Scan(&errr.MinUnix, &errr.MaxUnix)
+    if errr.MinUnix > 0 { s2 := time.Unix(errr.MinUnix, 0).UTC().Format(time.RFC3339); errr.MinISO = &s2 }
+    if errr.MaxUnix > 0 { s2 := time.Unix(errr.MaxUnix, 0).UTC().Format(time.RFC3339); errr.MaxISO = &s2 }
+
+    // Import state
+    type ImportState struct {
+        LogName string `json:"log_name"`
+        Inode   int64  `json:"inode"`
+        Position int64 `json:"position"`
+        LastMtime int64 `json:"last_mtime"`
+        LastSize  int64 `json:"last_size"`
+        UpdatedAt int64 `json:"updated_at"`
+    }
+    var states []ImportState
+    if rows, err := s.db.Query(`SELECT log_name, COALESCE(inode,0), COALESCE(position,0), COALESCE(last_mtime,0), COALESCE(last_size,0), COALESCE(updated_at,0) FROM import_state ORDER BY log_name`); err == nil {
+        defer rows.Close()
+        for rows.Next() {
+            var st ImportState
+            if scanErr := rows.Scan(&st.LogName, &st.Inode, &st.Position, &st.LastMtime, &st.LastSize, &st.UpdatedAt); scanErr == nil {
+                states = append(states, st)
+            }
+        }
+    }
+    resp := map[string]interface{}{
+        "db_path": dbPath,
+        "requests": req,
+        "errors": errr,
+        "import_state": states,
+    }
+    return writeJSON(w, resp)
 }
 
 func clampInt(s string, def, min, max int) int {

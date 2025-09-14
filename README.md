@@ -36,6 +36,7 @@ Web server
 - `/api/requests?from=...&to=...&limit=100&offset=0&method=GET&status=200&path_like=/blog%25`
   - Add `include_unparsed=true` to include rows from lines the parser couldn't fully understand (hidden by default).
   - `/api/errors?from=...&to=...&limit=100&offset=0&level=warn`
+  - Debug: `/api/debug/dbinfo` → DB path, row counts, min/max timestamps, and import_state snapshot
 
 Notes
 - `from`/`to` accept unix seconds or RFC3339 (`2025-09-13T00:00:00Z`). Defaults: last 7 days.
