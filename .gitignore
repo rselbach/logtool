@@ -1,0 +1,49 @@
+# Go build artifacts
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Project build outputs
+bin/
+cmd/**/server
+cmd/**/server.exe
+cmd/**/importer
+cmd/**/importer.exe
+cmd/**/pwhash
+cmd/**/pwhash.exe
+
+# Caches
+.gocache/
+.gomodcache/
+
+# Databases (SQLite)
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+monitor.db
+
+# Logs and archives
+*.log
+*.gz
+
+# Env files and secrets
+.env
+*.env
+*.env.local
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Coverage
+coverage.*
+*.coverprofile
+
