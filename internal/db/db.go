@@ -47,6 +47,7 @@ func migrate(db *sql.DB) error {
         `CREATE INDEX IF NOT EXISTS idx_request_ts ON request_events(ts_unix);`,
         `CREATE INDEX IF NOT EXISTS idx_request_status ON request_events(status);`,
         `CREATE INDEX IF NOT EXISTS idx_request_path ON request_events(path);`,
+        `CREATE INDEX IF NOT EXISTS idx_request_ua ON request_events(user_agent);`,
         // Other indexes for requests
 
         // Errors (error log)

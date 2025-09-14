@@ -11,6 +11,7 @@ import (
     "io"
     "net/http"
     "reflect"
+    "sort"
     "strconv"
     "strings"
     "time"
@@ -48,6 +49,8 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
     mux.HandleFunc("/api/timeseries/errors", s.wrap(s.handleTSErrors))
     mux.HandleFunc("/api/top/paths", s.wrap(s.handleTopPaths))
     mux.HandleFunc("/api/top/referrers", s.wrap(s.handleTopReferrers))
+    mux.HandleFunc("/api/top/ua", s.wrap(s.handleTopUA))
+    mux.HandleFunc("/api/top/ua_families", s.wrap(s.handleTopUAFamilies))
     mux.HandleFunc("/api/status", s.wrap(s.handleStatus))
     mux.HandleFunc("/api/requests", s.wrap(s.handleRequests))
     mux.HandleFunc("/api/errors", s.wrap(s.handleErrors))
@@ -543,6 +546,54 @@ func (s *Server) handleErrors(w http.ResponseWriter, r *http.Request) error {
     return writeJSON(w, out)
 }
 
+// Top raw user agents (exact strings)
+func (s *Server) handleTopUA(w http.ResponseWriter, r *http.Request) error {
+    from, to, err := s.parseRange(r)
+    if err != nil { return err }
+    limit := clampInt(r.URL.Query().Get("limit"), 20, 1, 200)
+    includeEmpty := r.URL.Query().Get("include_empty") == "true"
+    var rows *sql.Rows
+    if includeEmpty {
+        rows, err = s.db.Query(`SELECT COALESCE(user_agent, '') AS ua, COUNT(*) as c FROM request_events WHERE ts_unix BETWEEN ? AND ? GROUP BY ua ORDER BY c DESC LIMIT ?`, from, to, limit)
+    } else {
+        rows, err = s.db.Query(`SELECT user_agent AS ua, COUNT(*) as c FROM request_events WHERE ts_unix BETWEEN ? AND ? AND user_agent IS NOT NULL AND user_agent != '' GROUP BY ua ORDER BY c DESC LIMIT ?`, from, to, limit)
+    }
+    if err != nil { return err }
+    defer rows.Close()
+    type Row struct { UA string `json:"ua"`; Count int64 `json:"count"` }
+    var out []Row
+    for rows.Next() {
+        var ua string; var c int64
+        if err := rows.Scan(&ua, &c); err != nil { return err }
+        out = append(out, Row{UA: ua, Count: c})
+    }
+    return writeJSON(w, out)
+}
+
+// Top UA families (simple classification)
+func (s *Server) handleTopUAFamilies(w http.ResponseWriter, r *http.Request) error {
+    from, to, err := s.parseRange(r)
+    if err != nil { return err }
+    limit := clampInt(r.URL.Query().Get("limit"), 20, 1, 200)
+    rows, err := s.db.Query(`SELECT user_agent FROM request_events WHERE ts_unix BETWEEN ? AND ? AND user_agent IS NOT NULL AND user_agent != ''`, from, to)
+    if err != nil { return err }
+    defer rows.Close()
+    counts := map[string]int64{}
+    for rows.Next() {
+        var ua string
+        if err := rows.Scan(&ua); err != nil { return err }
+        fam := classifyUAFamily(ua)
+        counts[fam]++
+    }
+    type Row struct { Family string `json:"family"`; Count int64 `json:"count"` }
+    var items []Row
+    for k, v := range counts { items = append(items, Row{Family: k, Count: v}) }
+    // sort by count desc
+    sort.Slice(items, func(i, j int) bool { if items[i].Count == items[j].Count { return items[i].Family < items[j].Family }; return items[i].Count > items[j].Count })
+    if len(items) > limit { items = items[:limit] }
+    return writeJSON(w, items)
+}
+
 // Debug: return DB path and basic counts/ranges to help diagnose empty results.
 func (s *Server) handleDebugDBInfo(w http.ResponseWriter, r *http.Request) error {
     // Resolve DB file path via PRAGMA database_list
@@ -615,4 +666,34 @@ func clampInt(s string, def, min, max int) int {
     if n < min { return min }
     if n > max { return max }
     return n
+}
+
+// classifyUAFamily maps a User-Agent string to a coarse family label.
+// Kept lightweight to avoid heavy UA parsing dependencies.
+func classifyUAFamily(ua string) string {
+    if ua == "" { return "(none)" }
+    s := strings.ToLower(ua)
+    // Libraries/bots
+    if strings.Contains(s, "curl/") || s == "curl" { return "curl" }
+    if strings.Contains(s, "wget/") || s == "wget" { return "wget" }
+    if strings.Contains(s, "python-requests") || strings.Contains(s, "requests/") { return "python-requests" }
+    if strings.Contains(s, "go-http-client") { return "Go-http-client" }
+    if strings.Contains(s, "wordpress/") { return "WordPress" }
+    if strings.Contains(s, "rss") || strings.Contains(s, "feed") { return "Feed Reader" }
+    if strings.Contains(s, "bot") || strings.Contains(s, "spider") || strings.Contains(s, "crawler") { return "Bot" }
+    // Browsers
+    if strings.Contains(s, "edg/") || strings.Contains(s, "edge/") { return "Edge" }
+    if strings.Contains(s, "chrome/") && !strings.Contains(s, "chromium") { return "Chrome" }
+    if strings.Contains(s, "chromium") { return "Chromium" }
+    if strings.Contains(s, "firefox/") { return "Firefox" }
+    if strings.Contains(s, "safari/") {
+        if strings.Contains(s, "mobile/") || strings.Contains(s, "iphone") || strings.Contains(s, "ipad") { return "Mobile Safari" }
+        return "Safari"
+    }
+    if strings.Contains(s, "opera") || strings.Contains(s, "opr/") { return "Opera" }
+    // Fallback: first token
+    t := ua
+    if i := strings.IndexAny(t, " /"); i > 0 { t = t[:i] }
+    if len(t) > 32 { t = t[:32] }
+    return t
 }

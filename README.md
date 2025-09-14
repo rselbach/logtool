@@ -32,6 +32,8 @@ Web server
   - `/api/timeseries/errors?from=...&to=...&bucket=...&tz=...`
   - `/api/top/paths?from=...&to=...&limit=10`
   - `/api/top/referrers?from=...&to=...&limit=10&include_empty=false`
+  - `/api/top/ua?from=...&to=...&limit=20` → top raw User-Agent strings
+  - `/api/top/ua_families?from=...&to=...&limit=20` → top UA families (Chrome, Firefox, curl, bots, etc.)
   - `/api/status?from=...&to=...` → per-status counts
 - `/api/requests?from=...&to=...&limit=100&offset=0&method=GET&status=200&path_like=/blog%25`
   - Add `include_unparsed=true` to include rows from lines the parser couldn't fully understand (hidden by default).
