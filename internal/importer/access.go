@@ -2,6 +2,7 @@ package importer
 
 import (
     "database/sql"
+    "log"
     "net"
     "regexp"
     "strconv"
@@ -32,15 +33,19 @@ type hasher interface{ HashString(s string) string }
 
 // ImportAccess imports new lines from an access log.
 func ImportAccess(db *sql.DB, logName, path string, policy IPPolicy, h hasher) error {
+    // Capture previous state for logging
+    prevSt, havePrev, _ := getState(db, logName)
+    inode, _, _, _ := fileIdent(path)
     // Prepare insert statement.
-    stmt, err := db.Prepare(`INSERT INTO request_events (ts_unix, ts, remote_addr, xff, method, path, protocol, status, bytes_sent, referer, user_agent, raw_line)
+    stmt, err := db.Prepare(`INSERT OR IGNORE INTO request_events (ts_unix, ts, remote_addr, xff, method, path, protocol, status, bytes_sent, referer, user_agent, raw_line)
                              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
     if err != nil {
         return err
     }
     defer stmt.Close()
-
-    return withIncrementalRead(db, logName, path, func(line string) error {
+    var total, inserted int64
+    var firstISO, lastISO string
+    err = withIncrementalRead(db, logName, path, func(line string) error {
         m := accessRe.FindStringSubmatch(line)
         if m == nil {
             // Store as raw if unparsed, but try to recover timestamp from [ ... ]
@@ -50,7 +55,12 @@ func ImportAccess(db *sql.DB, logName, path string, policy IPPolicy, h hasher) e
                     t = tt.UTC()
                 }
             }
-            _, err := stmt.Exec(t.Unix(), t.Format(time.RFC3339), nil, nil, nil, nil, nil, nil, nil, nil, nil, line)
+            iso := t.Format(time.RFC3339)
+            res, err := stmt.Exec(t.Unix(), iso, nil, nil, nil, nil, nil, nil, nil, nil, nil, line)
+            if err == nil { if ra, _ := res.RowsAffected(); ra > 0 { inserted += ra } }
+            total++
+            if firstISO == "" { firstISO = iso }
+            lastISO = iso
             return err
         }
         remote := normalizeIP(m[1], policy, h)
@@ -80,9 +90,20 @@ func ImportAccess(db *sql.DB, logName, path string, policy IPPolicy, h hasher) e
         if remote == "" {
             remoteVal = nil
         }
-        _, err = stmt.Exec(tsUnix, tsISO, remoteVal, nullVal(xff), method, path, proto, status, bytes, nullVal(referer), nullVal(ua), line)
+        res, err := stmt.Exec(tsUnix, tsISO, remoteVal, nullVal(xff), method, path, proto, status, bytes, nullVal(referer), nullVal(ua), line)
+        if err == nil { if ra, _ := res.RowsAffected(); ra > 0 { inserted += ra } }
+        total++
+        if firstISO == "" { firstISO = tsISO }
+        lastISO = tsISO
         return err
     })
+    if err != nil { return err }
+    newSt, _, _ := getState(db, logName)
+    var prevPos int64
+    if havePrev { prevPos = prevSt.position }
+    log.Printf("import access: path=%s inode=%d pos=%d->%d (+%d) lines=%d inserted=%d ignored=%d ts=[%s..%s]",
+        path, inode, prevPos, newSt.position, newSt.position-prevPos, total, inserted, total-inserted, firstISO, lastISO)
+    return nil
 }
 
 // normalizeXFF applies IP policy to a comma-separated XFF list, keeping shape but normalizing IPs.

@@ -6,6 +6,7 @@ import (
     "fmt"
     "log"
     "os"
+    "strings"
 
     "logtool/internal/db"
     imp "logtool/internal/importer"
@@ -19,6 +20,9 @@ func main() {
         errorLog = flag.String("error", "./error.log", "nginx error.log path")
         ipPolicy = flag.String("ip-policy", "mask", "IP policy: store|mask|hash|drop")
         ipSalt   = flag.String("ip-salt", "", "Salt for hash policy (fallback to env IP_SALT)")
+        backfillAccess = flag.String("backfill-access", "", "Comma-separated list or glob(s) for historical access logs (.gz supported)")
+        backfillError  = flag.String("backfill-error", "", "Comma-separated list or glob(s) for historical error logs (.gz supported)")
+        backfillOnly   = flag.Bool("backfill-only", false, "Only run backfill; skip incremental import")
     )
     flag.Parse()
 
@@ -44,13 +48,24 @@ func main() {
         h = util.NewHasher(salt)
     }
 
-    // Import access.log
-    if err := importAccess(sqldb, *access, imp.IPPolicy(*ipPolicy), h); err != nil {
-        log.Fatalf("import access: %v", err)
+    // Backfill first (optional)
+    if *backfillAccess != "" {
+        paths := splitCSV(*backfillAccess)
+        if err := imp.ImportAccessFiles(sqldb, paths, imp.IPPolicy(*ipPolicy), h); err != nil { log.Fatalf("backfill access: %v", err) }
     }
-    // Import error.log
-    if err := importError(sqldb, *errorLog); err != nil {
-        log.Fatalf("import error: %v", err)
+    if *backfillError != "" {
+        paths := splitCSV(*backfillError)
+        if err := imp.ImportErrorFiles(sqldb, paths); err != nil { log.Fatalf("backfill error: %v", err) }
+    }
+    if !*backfillOnly {
+        // Import access.log incrementally
+        if err := importAccess(sqldb, *access, imp.IPPolicy(*ipPolicy), h); err != nil {
+            log.Fatalf("import access: %v", err)
+        }
+        // Import error.log incrementally
+        if err := importError(sqldb, *errorLog); err != nil {
+            log.Fatalf("import error: %v", err)
+        }
     }
     fmt.Println("Import completed.")
 }
@@ -69,4 +84,12 @@ func importError(dbx *sql.DB, path string) error {
         return err
     }
     return imp.ImportError(dbx, "error", path)
+}
+
+func splitCSV(s string) []string {
+    if s == "" { return nil }
+    parts := strings.Split(s, ",")
+    out := make([]string, 0, len(parts))
+    for _, p := range parts { if pp := strings.TrimSpace(p); pp != "" { out = append(out, pp) } }
+    return out
 }

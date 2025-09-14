@@ -141,9 +141,13 @@ Flags
 - `-error`: Error log path (default `./error.log`).
 - `-ip-policy`: `store|mask|hash|drop` (default `mask`).
 - `-ip-salt`: salt for `hash` policy (env `IP_SALT` also honored).
+- `-backfill-access`: comma-separated files or globs for historical access logs; supports `.gz`. Example: `-backfill-access "/var/log/nginx/access.log-*,/var/log/nginx/site/*access*.gz"`
+- `-backfill-error`: same for error logs.
+- `-backfill-only`: run backfill and exit (skip incremental import/state).
 
 Notes
 - Import is incremental: it records byte offsets + inodes in `import_state` to avoid re-reading lines across runs and handle truncation/rotation (active file only initially).
+- Backfill imports: use the `-backfill-*` flags to ingest rotated and gzipped logs once. Duplicates are ignored using a unique index on `raw_line`.
 - Access format assumed: Combined Log Format plus `"$http_x_forwarded_for"` as a final quoted field.
   Example: `IP - - [time] "METHOD PATH PROTO" status bytes "referer" "ua" "xff"`
 - Error format assumed: `YYYY/MM/DD HH:MM:SS [level] pid#tid: message`.
