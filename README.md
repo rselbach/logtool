@@ -100,9 +100,19 @@ Makefile helpers
 - Common tasks:
   - Build: `make build` (outputs into `./bin/`)
   - Install binaries+UI: `sudo make install`
-  - Install systemd units: `sudo make systemd-install && sudo make systemd-enable`
+  - Install systemd units: `sudo make systemd-install && sudo make systemd-config && sudo make systemd-enable`
   - Install nginx sample: `sudo make nginx-install && sudo systemctl reload nginx`
 - Variables you can override: `PREFIX`, `BINDIR`, `SHAREDIR`, `SYSTEMD_DIR`, `ETC_DIR`.
+  - Also: `DATADIR` (default `/var/lib/logtool`), `RUN_USER`, `RUN_GROUP`, `SUPP_GROUPS`, `DYNAMIC_USER=yes|no`, `ADDR`, `TZ`, `ACCESS_LOG`, `ERROR_LOG`.
+  - Preview config: `make print-config`
+
+Examples
+- Install with custom data dir and service user:
+  - `sudo make install DATADIR=/srv/logtool RUN_USER=logtool RUN_GROUP=logtool`
+- Generate systemd drop-ins that set DB path, static dir, address/timezone, and use explicit user/group instead of DynamicUser:
+  - `sudo make systemd-config DATADIR=/srv/logtool RUN_USER=logtool RUN_GROUP=logtool SUPP_GROUPS=adm DYNAMIC_USER=no ACCESS_LOG=/var/log/nginx/site-access.log ERROR_LOG=/var/log/nginx/site-error.log`
+- Then enable services:
+  - `sudo make systemd-enable`
 
 Systemd timer for importer (replaces cron)
 - Build and install importer binary:
