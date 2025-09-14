@@ -30,6 +30,9 @@ canvas{width:100%!important;height:100%!important;display:block}
 .table th,.table td{padding:6px 8px;border-bottom:1px solid #242a35;text-align:left}
 .table tr:hover{background:#1a1f29}
 .table .num{text-align:right}
+.table th.sortable{cursor:pointer;user-select:none}
+.table th.sortable[data-sort="asc"]::after{content:" \25B2";color:var(--muted)}
+.table th.sortable[data-sort="desc"]::after{content:" \25BC";color:var(--muted)}
 .table .pct{text-align:right;color:var(--muted)}
 .table a, .table a:visited{color:var(--fg);text-decoration:none}
 .table a:hover, .table a:focus{color:var(--accent);text-decoration:underline}

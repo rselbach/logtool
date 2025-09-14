@@ -129,6 +129,39 @@
     const c = parseInt(code,10); if (c>=200 && c<300) return 'status-2xx'; if (c>=300 && c<400) return 'status-3xx'; if (c>=400 && c<500) return 'status-4xx'; return 'status-5xx';
   }
 
+  // Bind clickable headers for a table; sorters is an object: key -> (dir)=>cmpFn
+  const sortState = Object.create(null); // tableId -> {key, dir}
+  function bindSortHeaders(tableId, rows, sorters, defaultKey, defaultDir, onRender){
+    const table = document.getElementById(tableId);
+    if (!table) return;
+    const thead = table.querySelector('thead');
+    const state = sortState[tableId] || {key: defaultKey, dir: defaultDir};
+    sortState[tableId] = state;
+    function render(){
+      const sorter = sorters[state.key];
+      const cmp = sorter ? sorter(state.dir) : (()=>0);
+      const sorted = rows.slice().sort(cmp);
+      onRender(sorted);
+      thead.querySelectorAll('th.sortable').forEach(th=>{
+        th.removeAttribute('data-sort');
+        if (th.dataset.key === state.key) th.setAttribute('data-sort', state.dir);
+      });
+    }
+    if (!thead.__sortableBound){
+      thead.__sortableBound = true;
+      thead.querySelectorAll('th.sortable').forEach(th=>{
+        th.addEventListener('click', ()=>{
+          const key = th.dataset.key;
+          if (!key) return;
+          if (state.key === key){ state.dir = (state.dir==='asc'?'desc':'asc'); }
+          else { state.key = key; state.dir = (key==='count' || key==='pct' || key==='status') ? 'desc' : 'asc'; }
+          render();
+        });
+      });
+    }
+    render();
+  }
+
   async function refresh(){
     const preset = $('#rangePreset').value;
     let range = inferRange(preset);
@@ -164,7 +197,12 @@
     const topRef   = await jget(`/api/top/referrers?${qstr({from,to,limit:10})}`);
     const uaFam    = await jget(`/api/top/ua_families?${qstr({from,to,limit:12})}`);
     const uaTop    = await jget(`/api/top/ua?${qstr({from,to,limit:12})}`);
-    renderTable($('#topPaths tbody'), topPaths, r => {
+    // Sorting helpers
+    const sortNumDesc = (key) => (a,b)=> (b[key]||0) - (a[key]||0);
+    const sortStrAsc = (key) => (a,b)=> (''+(a[key]||'')).localeCompare((''+(b[key]||'')));
+    // Top Paths (default: count desc)
+    let pathsData = topPaths.slice().sort(sortNumDesc('count'));
+    renderTable($('#topPaths tbody'), pathsData, r => {
       const tr = document.createElement('tr');
       const a = document.createElement('a'); a.textContent = r.path; a.href = '#'; a.addEventListener('click', (e)=>{e.preventDefault(); filterRequests({path_like:r.path})});
       const tdPath = document.createElement('td'); tdPath.appendChild(a);
@@ -172,20 +210,58 @@
       tr.appendChild(makeCell(number(r.count),'num'));
       return tr;
     });
-    renderTable($('#topRef tbody'), topRef, r => {
+    // Clickable headers
+    bindSortHeaders('topPaths', pathsData, {
+      path: (dir)=> (a,b)=> dir==='asc'? sortStrAsc('path')(a,b): sortStrAsc('path')(b,a),
+      count:(dir)=> (a,b)=> dir==='asc'? -sortNumDesc('count')(a,b): sortNumDesc('count')(a,b)
+    }, 'count', 'desc', (rows)=> renderTable($('#topPaths tbody'), rows, r=>{
+      const tr = document.createElement('tr');
+      const a = document.createElement('a'); a.textContent = r.path; a.href = '#'; a.addEventListener('click', (e)=>{e.preventDefault(); filterRequests({path_like:r.path})});
+      const tdPath = document.createElement('td'); tdPath.appendChild(a);
+      tr.appendChild(tdPath);
+      tr.appendChild(makeCell(number(r.count),'num'));
+      return tr;
+    }));
+
+    let refData = topRef.slice().sort(sortNumDesc('count'));
+    renderTable($('#topRef tbody'), refData, r => {
       const tr = document.createElement('tr');
       tr.appendChild(makeCell(r.referrer || '(none)'));
       tr.appendChild(makeCell(number(r.count),'num'));
       return tr;
     });
-    renderTable($('#uaFamilies tbody'), uaFam, r => {
+    bindSortHeaders('topRef', refData, {
+      referrer:(dir)=> (a,b)=> dir==='asc'? sortStrAsc('referrer')(a,b): sortStrAsc('referrer')(b,a),
+      count:(dir)=> (a,b)=> dir==='asc'? -sortNumDesc('count')(a,b): sortNumDesc('count')(a,b)
+    }, 'count', 'desc', (rows)=> renderTable($('#topRef tbody'), rows, r=>{
+      const tr = document.createElement('tr');
+      tr.appendChild(makeCell(r.referrer || '(none)'));
+      tr.appendChild(makeCell(number(r.count),'num'));
+      return tr;
+    }));
+
+    // UA Families with pct
+    let uaFamRows = uaFam.map(r => ({family:r.family, count:r.count, pct: totalReq>0 ? (r.count/totalReq)*100 : 0})).sort(sortNumDesc('count'));
+    renderTable($('#uaFamilies tbody'), uaFamRows, r => {
       const tr = document.createElement('tr');
       tr.appendChild(makeCell(r.family));
       tr.appendChild(makeCell(number(r.count),'num'));
-      const pct = totalReq>0 ? ((r.count/totalReq)*100).toFixed(1) : '0.0';
+      const pct = (r.pct||0).toFixed(1);
       tr.appendChild(makeCell(pct+'%','pct'));
       return tr;
     });
+    bindSortHeaders('uaFamilies', uaFamRows, {
+      family:(dir)=> (a,b)=> dir==='asc'? sortStrAsc('family')(a,b): sortStrAsc('family')(b,a),
+      count:(dir)=> (a,b)=> dir==='asc'? -sortNumDesc('count')(a,b): sortNumDesc('count')(a,b),
+      pct:(dir)=> (a,b)=> dir==='asc'? -sortNumDesc('pct')(a,b): sortNumDesc('pct')(a,b)
+    }, 'count', 'desc', (rows)=> renderTable($('#uaFamilies tbody'), rows, r=>{
+      const tr = document.createElement('tr');
+      tr.appendChild(makeCell(r.family));
+      tr.appendChild(makeCell(number(r.count),'num'));
+      const pct = (r.pct||0).toFixed(1);
+      tr.appendChild(makeCell(pct+'%','pct'));
+      return tr;
+    }));
     // Pie: top 6 families + Other
     {
       const topN = 6;
@@ -196,22 +272,43 @@
       if (!uaFamChart) uaFamChart = ensurePie($('#chartUAFam').getContext('2d'));
       updatePie(uaFamChart, labels, data);
     }
-    renderTable($('#uaTop tbody'), uaTop, r => {
+    let uaTopRows = uaTop.slice().sort(sortNumDesc('count'));
+    renderTable($('#uaTop tbody'), uaTopRows, r => {
       const tr = document.createElement('tr');
       tr.appendChild(makeCell(r.ua));
       tr.appendChild(makeCell(number(r.count),'num'));
       return tr;
     });
+    bindSortHeaders('uaTop', uaTopRows, {
+      ua:(dir)=> (a,b)=> dir==='asc'? sortStrAsc('ua')(a,b): sortStrAsc('ua')(b,a),
+      count:(dir)=> (a,b)=> dir==='asc'? -sortNumDesc('count')(a,b): sortNumDesc('count')(a,b)
+    }, 'count', 'desc', (rows)=> renderTable($('#uaTop tbody'), rows, r=>{
+      const tr = document.createElement('tr');
+      tr.appendChild(makeCell(r.ua));
+      tr.appendChild(makeCell(number(r.count),'num'));
+      return tr;
+    }));
 
     // Status breakdown
     const stat = await jget(`/api/status?${qstr({from,to})}`);
-    renderTable($('#statusTbl tbody'), stat, r => {
+    let statusRows = stat.slice().sort(sortNumDesc('count'));
+    renderTable($('#statusTbl tbody'), statusRows, r => {
       const tr = document.createElement('tr');
       const sc = statusClass(r.status);
       const tdS = document.createElement('td'); tdS.textContent = r.status; tdS.className = sc; tr.appendChild(tdS);
       tr.appendChild(makeCell(number(r.count),'num'));
       return tr;
     });
+    bindSortHeaders('statusTbl', statusRows, {
+      status:(dir)=> (a,b)=> dir==='asc'? (a.status-b.status): (b.status-a.status),
+      count:(dir)=> (a,b)=> dir==='asc'? -sortNumDesc('count')(a,b): sortNumDesc('count')(a,b)
+    }, 'count', 'desc', (rows)=> renderTable($('#statusTbl tbody'), rows, r=>{
+      const tr = document.createElement('tr');
+      const sc = statusClass(r.status);
+      const tdS = document.createElement('td'); tdS.textContent = r.status; tdS.className = sc; tr.appendChild(tdS);
+      tr.appendChild(makeCell(number(r.count),'num'));
+      return tr;
+    }));
 
     // Recent requests & errors
     await filterRequests({}, from, to);
