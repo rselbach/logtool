@@ -1,0 +1,45 @@
+[Unit]
+Description=Logtool Importer (nginx access/error logs to SQLite)
+After=local-fs.target
+Documentation=README.md
+
+[Service]
+Type=oneshot
+# Default paths; can be overridden in EnvironmentFile
+Environment=LOGTOOL_DB=/var/lib/logtool/monitor.db
+Environment=LOGTOOL_ACCESS=/var/log/nginx/access.log
+Environment=LOGTOOL_ERROR=/var/log/nginx/error.log
+Environment=LOGTOOL_IP_POLICY=mask
+EnvironmentFile=-/etc/logtool/importer.env
+WorkingDirectory=/var/lib/logtool
+ExecStart=/usr/local/bin/logtool-importer -db $LOGTOOL_DB -access $LOGTOOL_ACCESS -error $LOGTOOL_ERROR -ip-policy $LOGTOOL_IP_POLICY
+
+# Security + state dir
+StateDirectory=logtool
+UMask=0077
+DynamicUser=yes
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectControlGroups=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+PrivateDevices=yes
+MemoryDenyWriteExecute=yes
+SystemCallFilter=@system-service
+LockPersonality=yes
+RestrictSUIDSGID=yes
+RestrictNamespaces=yes
+CapabilityBoundingSet=
+ReadWritePaths=/var/lib/logtool
+
+# NOTE: Access to /var/log/nginx may require group membership or ACLs depending on your distro.
+# Common options (uncomment and adjust one of these if the importer cannot read the logs):
+# User=www-data
+# User=nginx
+# SupplementaryGroups=adm
+
+[Install]
+WantedBy=multi-user.target
+

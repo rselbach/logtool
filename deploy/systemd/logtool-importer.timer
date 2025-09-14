@@ -1,0 +1,12 @@
+[Unit]
+Description=Run Logtool Importer periodically
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=5min
+RandomizedDelaySec=30s
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+

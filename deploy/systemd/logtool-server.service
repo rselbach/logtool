@@ -1,0 +1,43 @@
+[Unit]
+Description=Logtool Server (SQLite-backed monitoring dashboard)
+Documentation=README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/logtool-server -db /var/lib/logtool/monitor.db -addr :8080 -tz +00:00 -static /usr/share/logtool/web/dist
+EnvironmentFile=-/etc/logtool/server.env
+WorkingDirectory=/var/lib/logtool
+
+# Create and manage state dir under /var/lib/logtool
+StateDirectory=logtool
+UMask=0077
+
+# Security hardening
+DynamicUser=yes
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectControlGroups=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+PrivateDevices=yes
+MemoryDenyWriteExecute=yes
+SystemCallFilter=@system-service
+LockPersonality=yes
+RestrictSUIDSGID=yes
+RestrictNamespaces=yes
+CapabilityBoundingSet=
+ReadWritePaths=/var/lib/logtool
+
+# Restart policy
+Restart=on-failure
+RestartSec=2s
+TimeoutStartSec=30s
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
+
