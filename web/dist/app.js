@@ -67,7 +67,7 @@
   }
 
   // Chart.js helpers
-  let reqChart = null, errChart = null;
+  let reqChart = null, errChart = null, uaFamChart = null;
   const chartOptions = (title) => ({
     responsive:true, maintainAspectRatio:false,
     plugins:{
@@ -88,6 +88,32 @@
     chart.data.labels = labels;
     chart.data.datasets[0].data = data;
     chart.update('none');
+  }
+  function ensurePie(ctx){
+    const cfg = {type:'pie', data:{labels:[], datasets:[{data:[], backgroundColor:[]} ]}, options:{responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}}};
+    return new Chart(ctx, cfg);
+  }
+  function updatePie(chart, labels, data){
+    const palette = ['#5aa6ff','#ff7a7a','#12c48b','#ffba3a','#a77bff','#ff8ec0','#33c3ff','#ffd166'];
+    chart.data.labels = labels;
+    chart.data.datasets[0].data = data;
+    chart.data.datasets[0].backgroundColor = labels.map((_,i)=>palette[i%palette.length]);
+    chart.update('none');
+    // Custom legend with colored text
+    renderLegend('legendUAFam', labels, chart.data.datasets[0].backgroundColor);
+  }
+
+  function renderLegend(id, labels, colors){
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.innerHTML = '';
+    labels.forEach((lbl, i) => {
+      const span = document.createElement('span');
+      span.className = 'item';
+      span.textContent = lbl;
+      span.style.color = colors[i] || '#5aa6ff';
+      el.appendChild(span);
+    });
   }
 
   function renderTable(tbody, rows, rowRenderer){
@@ -119,6 +145,7 @@
     $('#sumUnique').textContent = number(summary.unique_remote || 0);
     $('#sumErrors').textContent = number(summary.errors || 0);
     $('#sumLast').textContent = summary.last_request ? fmtLocal(summary.last_request) : '–';
+    const totalReq = summary.requests || 0;
 
     // Timeseries
     const tsReq = await jget(`/api/timeseries/requests?${qstr({from,to,bucket:bucketSel,tz})}`);
@@ -135,6 +162,8 @@
     // Top tables
     const topPaths = await jget(`/api/top/paths?${qstr({from,to,limit:10})}`);
     const topRef   = await jget(`/api/top/referrers?${qstr({from,to,limit:10})}`);
+    const uaFam    = await jget(`/api/top/ua_families?${qstr({from,to,limit:12})}`);
+    const uaTop    = await jget(`/api/top/ua?${qstr({from,to,limit:12})}`);
     renderTable($('#topPaths tbody'), topPaths, r => {
       const tr = document.createElement('tr');
       const a = document.createElement('a'); a.textContent = r.path; a.href = '#'; a.addEventListener('click', (e)=>{e.preventDefault(); filterRequests({path_like:r.path})});
@@ -146,6 +175,30 @@
     renderTable($('#topRef tbody'), topRef, r => {
       const tr = document.createElement('tr');
       tr.appendChild(makeCell(r.referrer || '(none)'));
+      tr.appendChild(makeCell(number(r.count),'num'));
+      return tr;
+    });
+    renderTable($('#uaFamilies tbody'), uaFam, r => {
+      const tr = document.createElement('tr');
+      tr.appendChild(makeCell(r.family));
+      tr.appendChild(makeCell(number(r.count),'num'));
+      const pct = totalReq>0 ? ((r.count/totalReq)*100).toFixed(1) : '0.0';
+      tr.appendChild(makeCell(pct+'%','pct'));
+      return tr;
+    });
+    // Pie: top 6 families + Other
+    {
+      const topN = 6;
+      const labels = uaFam.slice(0, topN).map(r=>r.family);
+      const data = uaFam.slice(0, topN).map(r=>r.count);
+      const others = uaFam.slice(topN).reduce((acc,r)=>acc+r.count,0);
+      if (others>0) { labels.push('Other'); data.push(others); }
+      if (!uaFamChart) uaFamChart = ensurePie($('#chartUAFam').getContext('2d'));
+      updatePie(uaFamChart, labels, data);
+    }
+    renderTable($('#uaTop tbody'), uaTop, r => {
+      const tr = document.createElement('tr');
+      tr.appendChild(makeCell(r.ua));
       tr.appendChild(makeCell(number(r.count),'num'));
       return tr;
     });
@@ -225,3 +278,4 @@
 
   document.addEventListener('DOMContentLoaded', init);
 })();
+    

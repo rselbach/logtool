@@ -48,7 +48,7 @@
         </div>
       </section>
 
-      <section class="grid2">
+      <section class="grid3">
         <div class="panel">
           <div class="panel-header">Requests Over Time</div>
           <div class="chart"><canvas id="chartRequests"></canvas></div>
@@ -56,6 +56,11 @@
         <div class="panel">
           <div class="panel-header">Errors Over Time</div>
           <div class="chart"><canvas id="chartErrors"></canvas></div>
+        </div>
+        <div class="panel">
+          <div class="panel-header">UA Families (Pie)</div>
+          <div class="chart"><canvas id="chartUAFam"></canvas></div>
+          <div class="legend" id="legendUAFam"></div>
         </div>
       </section>
 
@@ -67,6 +72,17 @@
         <div class="panel">
           <div class="panel-header">Top Referrers</div>
           <table class="table" id="topRef"><thead><tr><th>Referrer</th><th class="num">Count</th></tr></thead><tbody></tbody></table>
+        </div>
+      </section>
+
+      <section class="grid2">
+        <div class="panel">
+          <div class="panel-header">UA Families</div>
+          <table class="table" id="uaFamilies"><thead><tr><th>Family</th><th class="num">Count</th><th class="num">%</th></tr></thead><tbody></tbody></table>
+        </div>
+        <div class="panel">
+          <div class="panel-header">Top User Agents</div>
+          <table class="table" id="uaTop"><thead><tr><th>User Agent</th><th class="num">Count</th></tr></thead><tbody></tbody></table>
         </div>
       </section>
 
