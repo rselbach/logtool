@@ -130,6 +130,7 @@
   }
 
   // Bind clickable headers for a table; sorters is an object: key -> (dir)=>cmpFn
+  const sortState = Object.create(null); // tableId -> {key, dir}
   function bindSortHeaders(tableId, rows, sorters, defaultKey, defaultDir, onRender){
     const table = document.getElementById(tableId);
     if (!table) return;
