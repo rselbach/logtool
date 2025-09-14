@@ -6,7 +6,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/logtool-server -db /var/lib/logtool/monitor.db -addr :8080 -tz +00:00 -static /usr/share/logtool/web/dist
+ExecStart=/usr/local/bin/logtool-server
 EnvironmentFile=-/etc/logtool/server.env
 WorkingDirectory=/var/lib/logtool
 
@@ -40,4 +40,3 @@ LimitNOFILE=65536
 
 [Install]
 WantedBy=multi-user.target
-
