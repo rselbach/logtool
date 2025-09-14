@@ -22,6 +22,11 @@ func main() {
     )
     flag.Parse()
 
+    // Env overrides (used when flags unspecified, e.g., under systemd)
+    if v := os.Getenv("LOGTOOL_DB"); v != "" && *dbPath == "./monitor.db" { *dbPath = v }
+    if v := os.Getenv("LOGTOOL_ACCESS"); v != "" && *access == "./access.log" { *access = v }
+    if v := os.Getenv("LOGTOOL_ERROR"); v != "" && *errorLog == "./error.log" { *errorLog = v }
+
     // Open DB
     sqldb, err := db.Open(*dbPath)
     if err != nil {
@@ -65,4 +70,3 @@ func importError(dbx *sql.DB, path string) error {
     }
     return imp.ImportError(dbx, "error", path)
 }
-

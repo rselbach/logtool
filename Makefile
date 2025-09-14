@@ -119,7 +119,7 @@ systemd-config:
 	if [ -n "$(strip $(RUN_GROUP))" ]; then printf "Group=$(RUN_GROUP)\n" >>"$$SERVER_DROP"; fi; \
 	if [ -n "$(strip $(SUPP_GROUPS))" ]; then printf "SupplementaryGroups=$(SUPP_GROUPS)\n" >>"$$SERVER_DROP"; fi; \
 	printf "ExecStart=\n" >>"$$SERVER_DROP"; \
-	printf "ExecStart=$(BINDIR)/logtool-server -db $$LOGTOOL_DB -addr $$LOGTOOL_ADDR -tz $$LOGTOOL_TZ -static $$LOGTOOL_STATIC\n" >>"$$SERVER_DROP"; \
+	printf "ExecStart=$(BINDIR)/logtool-server\n" >>"$$SERVER_DROP"; \
 	echo "Wrote $$SERVER_DROP"; \
 	printf "[Service]\n" >"$$IMPORTER_DROP"; \
 	printf "Environment=LOGTOOL_DB=$(DATADIR)/monitor.db\n" >>"$$IMPORTER_DROP"; \
@@ -130,6 +130,8 @@ systemd-config:
 	if [ -n "$(strip $(RUN_USER))" ]; then printf "User=$(RUN_USER)\n" >>"$$IMPORTER_DROP"; fi; \
 	if [ -n "$(strip $(RUN_GROUP))" ]; then printf "Group=$(RUN_GROUP)\n" >>"$$IMPORTER_DROP"; fi; \
 	if [ -n "$(strip $(SUPP_GROUPS))" ]; then printf "SupplementaryGroups=$(SUPP_GROUPS)\n" >>"$$IMPORTER_DROP"; fi; \
+	printf "ExecStart=\n" >>"$$IMPORTER_DROP"; \
+	printf "ExecStart=$(BINDIR)/logtool-importer\n" >>"$$IMPORTER_DROP"; \
 	echo "Wrote $$IMPORTER_DROP";
 
 systemd-enable:

@@ -12,7 +12,7 @@ Environment=LOGTOOL_ERROR=/var/log/nginx/error.log
 Environment=LOGTOOL_IP_POLICY=mask
 EnvironmentFile=-/etc/logtool/importer.env
 WorkingDirectory=/var/lib/logtool
-ExecStart=/usr/local/bin/logtool-importer -db $LOGTOOL_DB -access $LOGTOOL_ACCESS -error $LOGTOOL_ERROR -ip-policy $LOGTOOL_IP_POLICY
+ExecStart=/usr/local/bin/logtool-importer
 
 # Security + state dir
 StateDirectory=logtool
@@ -42,4 +42,3 @@ ReadWritePaths=/var/lib/logtool
 
 [Install]
 WantedBy=multi-user.target
-

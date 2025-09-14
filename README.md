@@ -93,9 +93,11 @@ Systemd service
   - `systemctl daemon-reload`
   - `systemctl enable --now logtool-server`
 - Defaults:
-  - Binds on `:8080`, stores DB under `/var/lib/logtool/monitor.db`, serves static UI from `/usr/share/logtool/web/dist`.
+  - ExecStart has no arguments; configuration is via environment (see `/etc/logtool/server.env` and drop-ins). The Makefile drop-ins set:
+    - LOGTOOL_DB (defaults to `$(DATADIR)/monitor.db`), LOGTOOL_STATIC (defaults to `$(SHAREDIR)/web/dist`), LOGTOOL_ADDR, LOGTOOL_TZ
+  - Binds on `:8080`, stores DB under `/var/lib/logtool/monitor.db` unless overridden.
   - Uses `DynamicUser=yes` with `StateDirectory=logtool` and hardened sandbox; only `/var/lib/logtool` is writable.
-  - Override ports/paths by editing `ExecStart=` in the unit or setting corresponding env vars and replacing `ExecStart` with an environment-aware version.
+  - Override by editing the env files or regenerating drop-ins with `make systemd-config`.
 
 Makefile helpers
 - Common tasks:
