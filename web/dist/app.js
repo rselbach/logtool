@@ -68,6 +68,10 @@
     $('#to').value = toInputLocal(range.to);
   }
 
+  // Auto-refresh state
+  let autoRefreshEnabled = true;
+  let refreshInterval = null;
+
   // Chart.js helpers
   let reqChart = null, errChart = null, uaFamChart = null;
   const chartOptions = (title) => ({
@@ -324,10 +328,29 @@
       const msg = r.message.length>200 ? r.message.slice(0,200)+'…' : r.message;
       tr.appendChild(makeCell(msg));
       return tr;
-    });
-  }
+     });
+   }
 
-  async function filterRequests(extra={}, fromSec=null, toSec=null){
+   function toggleAutoRefresh(){
+     autoRefreshEnabled = !autoRefreshEnabled;
+     const button = $('#refresh');
+     if (autoRefreshEnabled) {
+       button.textContent = '▶️ Live';
+       button.classList.remove('paused');
+       button.classList.add('live');
+       refreshInterval = setInterval(refresh, 10000);
+     } else {
+       button.textContent = '⏸️ Paused';
+       button.classList.remove('live');
+       button.classList.add('paused');
+       if (refreshInterval) {
+         clearInterval(refreshInterval);
+         refreshInterval = null;
+       }
+     }
+   }
+
+   async function filterRequests(extra={}, fromSec=null, toSec=null){
     const preset = $('#rangePreset').value;
     let range = inferRange(preset);
     if (!range) { alert('Select valid custom range.'); return; }
@@ -378,17 +401,24 @@
       setCustomInputsVisible(custom);
       if (!custom) refresh();
     });
-    $('#refresh').addEventListener('click', () => refresh());
+     $('#refresh').addEventListener('click', () => toggleAutoRefresh());
     $('#bucket').addEventListener('change', (e) => { localStorage.setItem('lt_bucket', e.target.value); refresh(); });
     window.addEventListener('resize', () => {
       // Chart.js is responsive; no heavy redraw needed. Debounce optional updates.
       clearTimeout(window.__rt); window.__rt = setTimeout(()=>{ if(reqChart) reqChart.resize(); if(errChart) errChart.resize(); }, 150);
     });
 
-    refresh().catch(err => {
-      console.error(err);
-      alert('Failed to load data: '+err.message);
-    });
+     refresh().then(() => {
+       // Start auto-refresh after initial load
+       refreshInterval = setInterval(refresh, 10000);
+       // Set initial button state
+       const button = $('#refresh');
+       button.textContent = '▶️ Live';
+       button.classList.add('live');
+     }).catch(err => {
+       console.error(err);
+       alert('Failed to load data: '+err.message);
+     });
   }
 
   document.addEventListener('DOMContentLoaded', init);

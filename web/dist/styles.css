@@ -9,6 +9,27 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--fg);font:14px/1.45
 select,button,input{background:var(--panel);color:var(--fg);border:1px solid #2a2f3a;border-radius:6px;padding:6px 8px}
 button{cursor:pointer}
 button:hover{border-color:#3a4150}
+
+/* Live/Paused button states */
+button.live {
+  background: var(--ok);
+  border-color: #0f9b6b;
+  color: white;
+}
+
+button.paused {
+  background: var(--err);
+  border-color: #e54a54;
+  color: white;
+}
+
+button.live:hover {
+  border-color: #0a7a52;
+}
+
+button.paused:hover {
+  border-color: #cc414a;
+}
 .hidden{display:none}
 
 .content{padding:16px;max-width:1200px;margin:0 auto}
