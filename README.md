@@ -1,160 +1,23 @@
-Logtool — Simple Site Monitoring (SQLite)
+# Logtool
 
-Components in this repo:
-- `cmd/importer`: Go CLI that imports Caddy (default) or nginx access/error logs into a local SQLite DB.
-- `internal/db`: DB open + auto-migrations.
-- `internal/importer`: Incremental log readers + parsers.
-- `cmd/server`: Minimal JSON web API on top of the DB (for the future dashboard).
+> **Disclaimer:** This project was conceived for my personal environment and may not be suitable for other deployments without thorough review and customization.
 
-Quick start
-- Build: `go build ./cmd/importer`
-- Run: `./importer -access ./access.log -error ./error.log -db ./monitor.db`
+Logtool ingests web server access and error logs into a local SQLite database and exposes a dashboard and JSON API for exploring traffic trends, error rates, and top sources. The importer CLI tails nginx combined logs or Caddy JSON logs incrementally, normalizes IPs according to configurable privacy policies, and deduplicates entries using inode/offset tracking.
 
-Web server
-- Build: `go build ./cmd/server`
-- Run: `./server -db ./monitor.db -addr :8080 -tz +00:00 -cors=true -static ./web/dist`
-  - Add Basic Auth (recommended for public networks):
-    - `./server -db ./monitor.db -addr :8080 -static ./web/dist -auth-user alice -auth-pass 's3cret'`
-    - Or via env: `LOGTOOL_USER=alice LOGTOOL_PASS=s3cret ./server ...`
-  - Or Bearer token auth (good for API access or reverse proxy headers):
-    - Single token: `./server ... -auth-token 'mytoken123'`
-    - Multiple tokens: `./server ... -auth-token 't1,t2,t3'`
-    - From file: `./server ... -auth-token-file ./tokens.txt` (one token per line, `#` comments allowed)
-    - Env vars: `LOGTOOL_TOKEN=tok`, or `LOGTOOL_TOKENS=t1,t2`
-  - Or Login screen (form-based session auth):
-    - Generate bcrypt hash: `go run ./cmd/pwhash -password 'your-strong-pass'` (copy `$2b$...`)
-    - Start: `./server ... -login-user alice -login-hash '$2b$12$...' -session-secret 'randomBase64' -session-ttl 12h`
-    - Env: `LOGTOOL_LOGIN_USER`, `LOGTOOL_LOGIN_HASH`, `LOGTOOL_SESSION_SECRET`, `LOGTOOL_SESSION_TTL`
-- Endpoints (GET):
-  - `/health` → `ok`
-  - `/api/summary?from=...&to=...` → totals snapshot
-  - `/api/timeseries/requests?from=...&to=...&bucket=hour|day|minute&tz=-04:00` → list of `{t,count}`
-  - `/api/timeseries/errors?from=...&to=...&bucket=...&tz=...`
-  - `/api/top/paths?from=...&to=...&limit=10`
-  - `/api/top/referrers?from=...&to=...&limit=10&include_empty=false`
-  - `/api/top/ua?from=...&to=...&limit=20` → top raw User-Agent strings
-  - `/api/top/ua_families?from=...&to=...&limit=20` → top UA families (Chrome, Firefox, curl, bots, etc.)
-  - `/api/status?from=...&to=...` → per-status counts
-- `/api/requests?from=...&to=...&limit=100&offset=0&method=GET&status=200&path_like=/blog%25`
-  - Add `include_unparsed=true` to include rows from lines the parser couldn't fully understand (hidden by default).
-  - `/api/errors?from=...&to=...&limit=100&offset=0&level=warn`
-  - Debug: `/api/debug/dbinfo` → DB path, row counts, min/max timestamps, and import_state snapshot
+## Quick Start
 
-Notes
-- `from`/`to` accept unix seconds or RFC3339 (`2025-09-13T00:00:00Z`). Defaults: last 7 days.
-- `tz` offsets only affect bucketing boundaries (e.g., start of hour/day); responses return UTC timestamps.
- - If Basic Auth is enabled, the browser will prompt once and then reuse credentials for API calls and static files.
- - If Bearer is enabled, send `Authorization: Bearer <token>` on requests. Examples:
-   - `curl -H 'Authorization: Bearer mytoken123' http://localhost:8080/api/summary`
-   - With the UI behind a reverse proxy, you can inject the header using `proxy_set_header Authorization 'Bearer mytoken123';`
- - If Login is enabled, `/login` serves a minimal sign-in form and sets an HttpOnly, HMAC-signed cookie. Use a long random `-session-secret` in production.
-
-CLI utility
-- `cmd/pwhash`: prints a bcrypt hash for a given password.
-  - Examples:
-    - `go run ./cmd/pwhash -password 'My#Str0ng#Pass'`
-    - `echo -n 'My#Str0ng#Pass' | go run ./cmd/pwhash`
-
-Nginx alternative (proxy auth)
-- You can also place the server behind Nginx and protect it with `auth_basic`. Example:
-
-```
-location /monitor/ {
-    proxy_pass http://127.0.0.1:8080/;
-    auth_basic "Restricted";
-    auth_basic_user_file /etc/nginx/.htpasswd; # create with: htpasswd -c /etc/nginx/.htpasswd alice
-}
+```bash
+make build
+./bin/importer --path /var/log/nginx/access.log --format nginx --policy mask
+./bin/server --db monitor.db --static ./web/dist
 ```
 
-Nginx reverse proxy (full example)
-- See `deploy/nginx/logtool.conf` for a complete server block with two protection options:
-  - Use Logtool’s own login page (/login) and sessions; or
-  - Protect via Nginx Basic Auth or inject a Bearer token for all requests.
-  - Adjust `server_name`, TLS cert paths, and location prefix (`/monitor/`).
+Visit the dashboard at `http://localhost:8080/` to select ranges (including Go duration strings like `5m`, `2h`, or `1d`), review summaries, and drill into recent requests or errors. The server supports optional basic auth, bearer tokens, or form login with HMAC-signed session cookies configured via flags or environment variables.
 
-Frontend
-- Static files live under `web/dist`. When you run the server with `-static ./web/dist`, visit `http://localhost:8080/` for the dashboard.
-- The UI is vanilla HTML/JS/CSS and uses the JSON endpoints directly. It supports quick range presets, auto bucket sizing (minute/hour/day), and client-local timezone bucketing.
-- Charts use a vendored `Chart.js` UMD build (`web/dist/vendor/chart.umd.min.js`) so no CDN is required. To update:
-  - `curl -L -o web/dist/vendor/chart.umd.min.js https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js`
+## Configuration Highlights
 
-Systemd service
-- Files in `deploy/systemd/`:
-  - `logtool-server.service`: unit to run the server as a hardened systemd service.
-  - `server.env.example`: sample environment file for `/etc/logtool/server.env`.
-  - `logtool-importer.service`: oneshot importer runner.
-  - `logtool-importer.timer`: schedules the importer every 5 minutes.
-  - `importer.env.example`: sample env for `/etc/logtool/importer.env`.
-- Install (as root):
-  - `install -Dm644 deploy/systemd/logtool-server.service /etc/systemd/system/logtool-server.service`
-  - `install -Dm644 deploy/systemd/server.env.example /etc/logtool/server.env`
-  - Install binaries and UI assets:
-    - `go build -o /usr/local/bin/logtool-server ./cmd/server`
-    - `install -d /usr/share/logtool/web/dist && cp -r web/dist/* /usr/share/logtool/web/dist/`
-  - Edit `/etc/logtool/server.env` to set auth and paths.
-  - `systemctl daemon-reload`
-  - `systemctl enable --now logtool-server`
-- Defaults:
-  - ExecStart has no arguments; configuration is via environment (see `/etc/logtool/server.env` and drop-ins). The Makefile drop-ins set:
-    - LOGTOOL_DB (defaults to `$(DATADIR)/monitor.db`), LOGTOOL_STATIC (defaults to `$(SHAREDIR)/web/dist`), LOGTOOL_ADDR, LOGTOOL_TZ
-  - Binds on `:8080`, stores DB under `/var/lib/logtool/monitor.db` unless overridden.
-  - Uses `DynamicUser=yes` with `StateDirectory=logtool` and hardened sandbox; only `/var/lib/logtool` is writable.
-  - Override by editing the env files or regenerating drop-ins with `make systemd-config`.
+- **Importer flags:** `--path` (repeatable), `--format` (`nginx` or `caddy`), `--policy` (`store`, `mask`, `hash`, `drop`), `--backfill` duration, and `--state-db` for tracking offsets.
+- **Server flags:** `--db`, `--listen`, `--tls-cert/key`, `--bearer`, `--basic-user/pass`, `--login-user`, `--login-pass-hash`, and `--session-secret`.
+- **API endpoints:** `/api/summary`, `/api/timeseries/{requests,errors}`, `/api/top/{paths,referrers,ua,ua_families}`, `/api/status`, `/api/requests`, `/api/errors`, and `/api/debug/dbinfo`.
 
-Makefile helpers
-- Common tasks:
-  - Build: `make build` (outputs into `./bin/`)
-  - Install binaries+UI: `sudo make install`
-  - Install systemd units: `sudo make systemd-install && sudo make systemd-config && sudo make systemd-enable`
-  - Install nginx sample: `sudo make nginx-install && sudo systemctl reload nginx`
-- Variables you can override: `PREFIX`, `BINDIR`, `SHAREDIR`, `SYSTEMD_DIR`, `ETC_DIR`.
-  - Also: `DATADIR` (default `/var/lib/logtool`), `RUN_USER`, `RUN_GROUP`, `SUPP_GROUPS`, `DYNAMIC_USER=yes|no`, `ADDR`, `TZ`, `ACCESS_LOG`, `ERROR_LOG`.
-  - Preview config: `make print-config`
-
-Examples
-- Install with custom data dir and service user:
-  - `sudo make install DATADIR=/srv/logtool RUN_USER=logtool RUN_GROUP=logtool`
-- Generate systemd drop-ins that set DB path, static dir, address/timezone, and use explicit user/group instead of DynamicUser:
-- `sudo make systemd-config DATADIR=/srv/logtool RUN_USER=logtool RUN_GROUP=logtool SUPP_GROUPS=adm DYNAMIC_USER=no ACCESS_LOG=/var/log/caddy/access.log ERROR_LOG=/var/log/caddy/error.log`
-- Then enable services:
-  - `sudo make systemd-enable`
-
-Systemd timer for importer (replaces cron)
-- Build and install importer binary:
-  - `go build -o /usr/local/bin/logtool-importer ./cmd/importer`
-- Install units + env:
-  - `install -Dm644 deploy/systemd/logtool-importer.service /etc/systemd/system/logtool-importer.service`
-  - `install -Dm644 deploy/systemd/logtool-importer.timer /etc/systemd/system/logtool-importer.timer`
-  - `install -Dm644 deploy/systemd/importer.env.example /etc/logtool/importer.env`
-  - Edit `/etc/logtool/importer.env` to point to your log paths (e.g., `/var/log/caddy/*.log`) and desired IP policy. Set `LOGTOOL_FORMAT=nginx` if you still ingest nginx logs.
-- Enable and start:
-  - `systemctl daemon-reload`
-  - `systemctl enable --now logtool-importer.timer`
-  - Check: `systemctl status logtool-importer.timer` and `journalctl -u logtool-importer -f`
-- Permissions note:
-  - If nginx logs are `640 root:adm`, grant the importer read access by either:
-    - Adding `SupplementaryGroups=adm` to `logtool-importer.service`, or
-    - Running as `User=www-data`/`User=nginx` (uncomment in the unit), or
-    - Setting ACLs (e.g., `setfacl -m g:adm:r /var/log/nginx/access.log /var/log/nginx/error.log`).
-
-Flags
-- `-db`: SQLite database path (default `./monitor.db`).
-- `-access`: Access log path (default `./access.log`).
-- `-error`: Error log path (default `./error.log`).
-- `-format`: Log format (`caddy` default; set `nginx` for legacy logs). Env: `LOGTOOL_FORMAT`.
-- `-ip-policy`: `store|mask|hash|drop` (default `mask`).
-- `-ip-salt`: salt for `hash` policy (env `IP_SALT` also honored).
-- `-backfill-access`: comma-separated files or globs for historical access logs; supports `.gz`. Example: `-backfill-access "/var/log/nginx/access.log-*,/var/log/nginx/site/*access*.gz"`
-- `-backfill-error`: same for error logs.
-- `-backfill-only`: run backfill and exit (skip incremental import/state).
-
-Notes
-- Import is incremental: it records byte offsets + inodes in `import_state` to avoid re-reading lines across runs and handle truncation/rotation (active file only initially).
-- Backfill imports: use the `-backfill-*` flags to ingest rotated and gzipped logs once. Duplicates are ignored using a unique index on `raw_line`.
-- Access format defaults to Caddy’s structured JSON logs (see `logs/caddy-access.log` for an example). Use `-format nginx` if your files emit the Combined Log Format with a trailing `"$http_x_forwarded_for"` field.
-- Error format defaults to Caddy’s structured logs; switch to `-format nginx` to parse traditional `YYYY/MM/DD HH:MM:SS [level] pid#tid: message` lines.
-
-Future work
-- Backfill rotated logs (optionally `.1` / dated / gz files).
-- Web API + dashboard frontend on top of this schema.
-- More parsers (timings, upstreams) if emitted by your `log_format`.
+See `make help` for additional build targets and use `go test ./...` to run the suite.
