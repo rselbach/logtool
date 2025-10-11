@@ -14,6 +14,47 @@
   function toRFC3339(dt){ return new Date(dt.getTime() - dt.getMilliseconds()).toISOString().replace(/\.\d{3}Z$/, 'Z') }
   function fmtLocal(iso){ const d=new Date(iso); return d.toLocaleString() }
   function number(n){ return n.toLocaleString() }
+  function parseGoDuration(str){
+    let s = (str || '').trim();
+    if (!s) return null;
+    if (s[0] === '+' || s[0] === '-'){
+      if (s[0] === '-') return null;
+      s = s.slice(1);
+    }
+    if (!s) return null;
+    const unitMap = {
+      ns:1e-6,
+      us:1e-3,
+      µs:1e-3,
+      μs:1e-3,
+      ms:1,
+      s:1000,
+      m:60000,
+      h:3600000,
+      d:86400000,
+      day:86400000,
+      w:604800000,
+      week:604800000
+    };
+    const re = /(\d+(?:\.\d+)?)(day|week|ns|us|µs|μs|ms|s|m|h|d|w)/gi;
+    let last = 0;
+    let total = 0;
+    let match;
+    while ((match = re.exec(s))){
+      if (match.index !== last) return null;
+      const value = parseFloat(match[1]);
+      if (!Number.isFinite(value)) return null;
+      let unit = match[2].toLowerCase();
+      if (unit === 'µs' || unit === 'μs') unit = 'us';
+      const factor = unitMap[unit];
+      if (!factor) return null;
+      total += value * factor;
+      last = re.lastIndex;
+    }
+    if (last !== s.length) return null;
+    if (total <= 0) return null;
+    return Math.round(total);
+  }
 
   function tzOffsetStr(){
     // getTimezoneOffset returns minutes to add to local to get UTC (e.g., EDT -4h => +240)
@@ -48,6 +89,17 @@
     else if (preset === '7d') { to = now; from = new Date(now.getTime() - 7*86400*1000); }
     else if (preset === '2w') { to = now; from = new Date(now.getTime() - 14*86400*1000); }
     else if (preset === '1m') { to = now; from = new Date(now.getTime() - 30*86400*1000); }
+    else if (preset === 'duration') {
+      const input = $('#duration');
+      const ms = parseGoDuration(input.value);
+      if (!ms) {
+        alert('Enter a valid duration (e.g. 5m, 1h, 1d).');
+        if (input) input.focus();
+        return null;
+      }
+      to = now;
+      from = new Date(now.getTime() - ms);
+    }
     else if (preset === 'today') {
       to = now;
       from = new Date(now); from.setHours(0,0,0,0);
@@ -59,8 +111,19 @@
     return { from, to };
   }
 
-  function setCustomInputsVisible(vis){
-    $$('#from, #to').forEach(el => el.classList.toggle('hidden', !vis));
+  function setCustomInputsVisible(preset){
+    const showCustom = preset === 'custom';
+    const showDuration = preset === 'duration';
+    $$('#from, #to').forEach(el => el.classList.toggle('hidden', !showCustom));
+    const durationInput = $('#duration');
+    if (durationInput) {
+      const wasHidden = durationInput.classList.contains('hidden');
+      durationInput.classList.toggle('hidden', !showDuration);
+      durationInput.disabled = !showDuration;
+      if (showDuration && wasHidden) {
+        setTimeout(() => durationInput.focus(), 0);
+      }
+    }
   }
 
   function setCustomFromTo(range){
@@ -171,7 +234,10 @@
   async function refresh(){
     const preset = $('#rangePreset').value;
     let range = inferRange(preset);
-    if (!range) { alert('Select valid custom range.'); return; }
+    if (!range) {
+      if (preset !== 'duration') alert('Select a valid range.');
+      return;
+    }
     const from = Math.floor(range.from.getTime()/1000);
     const to = Math.floor(range.to.getTime()/1000);
     let bucketSel = $('#bucket').value;
@@ -353,7 +419,10 @@
    async function filterRequests(extra={}, fromSec=null, toSec=null){
     const preset = $('#rangePreset').value;
     let range = inferRange(preset);
-    if (!range) { alert('Select valid custom range.'); return; }
+    if (!range) {
+      if (preset !== 'duration') alert('Select a valid range.');
+      return;
+    }
     const from = fromSec ?? Math.floor(range.from.getTime()/1000);
     const to = toSec ?? Math.floor(range.to.getTime()/1000);
     const base = {from, to, limit:50, offset:0, ...extra};
@@ -378,17 +447,34 @@
     // Restore saved UI settings
     const savedPreset = localStorage.getItem('lt_range_preset');
     const savedBucket = localStorage.getItem('lt_bucket');
+    const durationInput = $('#duration');
+    const savedDuration = localStorage.getItem('lt_duration');
+    durationInput.value = savedDuration || '5m';
+    durationInput.addEventListener('change', () => {
+      const val = durationInput.value.trim();
+      localStorage.setItem('lt_duration', val);
+      if ($('#rangePreset').value === 'duration') refresh();
+    });
+    durationInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const val = durationInput.value.trim();
+        localStorage.setItem('lt_duration', val);
+        if ($('#rangePreset').value === 'duration') refresh();
+      }
+    });
     if (savedPreset) {
       const sel = $('#rangePreset');
       if ([...sel.options].some(o=>o.value===savedPreset)) {
         sel.value = savedPreset;
-        setCustomInputsVisible(savedPreset === 'custom');
+        setCustomInputsVisible(savedPreset);
       }
     }
     if (savedBucket) {
       const sel = $('#bucket');
       if ([...sel.options].some(o=>o.value===savedBucket)) sel.value = savedBucket;
     }
+    setCustomInputsVisible($('#rangePreset').value);
 
     // Default custom inputs to last 7d for easy edits (does not override preset)
     const now = new Date(); const from7 = new Date(now.getTime()-7*86400*1000);
@@ -396,10 +482,16 @@
 
     $('#rangePreset').addEventListener('change', e => {
       const preset = e.target.value;
-      const custom = preset === 'custom';
       localStorage.setItem('lt_range_preset', preset);
-      setCustomInputsVisible(custom);
-      if (!custom) refresh();
+      setCustomInputsVisible(preset);
+      if (preset === 'duration') {
+        const val = $('#duration').value.trim();
+        if (parseGoDuration(val)) {
+          refresh();
+        }
+      } else if (preset !== 'custom') {
+        refresh();
+      }
     });
      $('#refresh').addEventListener('click', () => toggleAutoRefresh());
     $('#bucket').addEventListener('change', (e) => { localStorage.setItem('lt_bucket', e.target.value); refresh(); });
