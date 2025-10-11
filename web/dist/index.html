@@ -73,6 +73,22 @@
 
       <section class="grid2">
         <div class="panel">
+          <div class="panel-header">Hosts by Traffic</div>
+          <div class="chart"><canvas id="chartHosts"></canvas></div>
+          <div class="legend" id="legendHosts"></div>
+        </div>
+        <div class="panel">
+          <div class="panel-header">Top Hosts</div>
+          <table class="table" id="hostsTable"><thead><tr>
+            <th class="sortable" data-key="host">Host</th>
+            <th class="num sortable" data-key="count">Count</th>
+            <th class="num sortable" data-key="pct">%</th>
+          </tr></thead><tbody></tbody></table>
+        </div>
+      </section>
+
+      <section class="grid2">
+        <div class="panel">
           <div class="panel-header">Top Paths</div>
           <table class="table" id="topPaths"><thead><tr>
             <th class="sortable" data-key="path">Path</th>
@@ -102,22 +118,6 @@
           <table class="table" id="uaTop"><thead><tr>
             <th class="sortable" data-key="ua">User Agent</th>
             <th class="num sortable" data-key="count">Count</th>
-          </tr></thead><tbody></tbody></table>
-        </div>
-      </section>
-
-      <section class="grid2">
-        <div class="panel">
-          <div class="panel-header">Hosts by Traffic</div>
-          <div class="chart"><canvas id="chartHosts"></canvas></div>
-          <div class="legend" id="legendHosts"></div>
-        </div>
-        <div class="panel">
-          <div class="panel-header">Top Hosts</div>
-          <table class="table" id="hostsTable"><thead><tr>
-            <th class="sortable" data-key="host">Host</th>
-            <th class="num sortable" data-key="count">Count</th>
-            <th class="num sortable" data-key="pct">%</th>
           </tr></thead><tbody></tbody></table>
         </div>
       </section>
