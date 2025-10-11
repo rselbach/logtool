@@ -50,6 +50,7 @@ func New(db *sql.DB, defaultTZ string, enableCORS bool, basicUser, basicPass str
 func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/health", s.wrap(s.handleHealth))
 	mux.HandleFunc("/api/summary", s.wrap(s.handleSummary))
+	mux.HandleFunc("/api/hosts", s.wrap(s.handleHosts))
 	mux.HandleFunc("/api/timeseries/requests", s.wrap(s.handleTSRequests))
 	mux.HandleFunc("/api/timeseries/errors", s.wrap(s.handleTSErrors))
 	mux.HandleFunc("/api/top/paths", s.wrap(s.handleTopPaths))
@@ -316,6 +317,36 @@ func writeJSON(w http.ResponseWriter, v interface{}) error {
 	return enc.Encode(v)
 }
 
+func (s *Server) buildWhereClause(r *http.Request, from, to int64) (string, []interface{}) {
+	where, args := s.buildWhereClause(r, from, to)
+	if host := strings.TrimSpace(r.URL.Query().Get("host")); host != "" {
+		where += " AND host = ?"
+		args = append(args, host)
+	}
+	return where, args
+}
+
+func (s *Server) handleHosts(w http.ResponseWriter, r *http.Request) error {
+	from, to, err := s.parseRange(r)
+	if err != nil {
+		return err
+	}
+	rows, err := s.db.Query(`SELECT DISTINCT host FROM request_events WHERE ts_unix BETWEEN ? AND ? AND host IS NOT NULL AND host != '' ORDER BY host`, from, to)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	var hosts []string
+	for rows.Next() {
+		var h string
+		if err := rows.Scan(&h); err != nil {
+			return err
+		}
+		hosts = append(hosts, h)
+	}
+	return writeJSON(w, hosts)
+}
+
 func (s *Server) parseRange(r *http.Request) (from, to int64, err error) {
 	// Accept `from`, `to` as RFC3339 or unix seconds. Defaults: from=now-7d, to=now.
 	now := time.Now().UTC().Unix()
@@ -535,11 +566,12 @@ func (s *Server) handleSummary(w http.ResponseWriter, r *http.Request) error {
 	}
 	var sum Summary
 	sum.From, sum.To = from, to
+	where, args := s.buildWhereClause(r, from, to)
 	// Requests count
-	row := s.db.QueryRow(`SELECT COUNT(*) FROM request_events WHERE ts_unix BETWEEN ? AND ?`, from, to)
+	row := s.db.QueryRow(fmt.Sprintf(`SELECT COUNT(*) FROM request_events WHERE %s`, where), args...)
 	_ = row.Scan(&sum.Requests)
 	// Unique (approx depends on policy)
-	row = s.db.QueryRow(`SELECT COUNT(DISTINCT COALESCE(remote_addr, '')) FROM request_events WHERE ts_unix BETWEEN ? AND ?`, from, to)
+	row = s.db.QueryRow(fmt.Sprintf(`SELECT COUNT(DISTINCT COALESCE(remote_addr, '')) FROM request_events WHERE %s`, where), args...)
 	_ = row.Scan(&sum.UniqueRemote)
 	// Errors count
 	row = s.db.QueryRow(`SELECT COUNT(*) FROM error_events WHERE ts_unix BETWEEN ? AND ?`, from, to)
@@ -561,7 +593,10 @@ func (s *Server) handleTSRequests(w http.ResponseWriter, r *http.Request) error 
 	}
 	bucket, tzOff := s.parseBucket(r)
 	// bucket_key = ((ts_unix + tzOff)/bucket)*bucket
-	rows, err := s.db.Query(`SELECT ((ts_unix + ?)/?)*? AS b, COUNT(*) FROM request_events WHERE ts_unix BETWEEN ? AND ? GROUP BY b ORDER BY b`, tzOff, bucket, bucket, from, to)
+	where, whereArgs := s.buildWhereClause(r, from, to)
+	query := fmt.Sprintf(`SELECT ((ts_unix + ?)/?)*? AS b, COUNT(*) FROM request_events WHERE %s GROUP BY b ORDER BY b`, where)
+	args := append([]interface{}{tzOff, bucket, bucket}, whereArgs...)
+	rows, err := s.db.Query(query, args...)
 	if err != nil {
 		return err
 	}
@@ -617,7 +652,10 @@ func (s *Server) handleTopPaths(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	limit := clampInt(r.URL.Query().Get("limit"), 10, 1, 100)
-	rows, err := s.db.Query(`SELECT path, COUNT(*) as c FROM request_events WHERE ts_unix BETWEEN ? AND ? AND path IS NOT NULL AND path != '' GROUP BY path ORDER BY c DESC LIMIT ?`, from, to, limit)
+	where, baseArgs := s.buildWhereClause(r, from, to)
+	where += " AND path IS NOT NULL AND path != ''"
+	args := append(append([]interface{}{}, baseArgs...), limit)
+	rows, err := s.db.Query(fmt.Sprintf(`SELECT path, COUNT(*) as c FROM request_events WHERE %s GROUP BY path ORDER BY c DESC LIMIT ?`, where), args...)
 	if err != nil {
 		return err
 	}
@@ -646,10 +684,14 @@ func (s *Server) handleTopReferrers(w http.ResponseWriter, r *http.Request) erro
 	limit := clampInt(r.URL.Query().Get("limit"), 10, 1, 100)
 	includeEmpty := r.URL.Query().Get("include_empty") == "true"
 	var rows *sql.Rows
+	where, baseArgs := s.buildWhereClause(r, from, to)
 	if includeEmpty {
-		rows, err = s.db.Query(`SELECT COALESCE(referer, '') AS ref, COUNT(*) as c FROM request_events WHERE ts_unix BETWEEN ? AND ? GROUP BY ref ORDER BY c DESC LIMIT ?`, from, to, limit)
+		args := append(append([]interface{}{}, baseArgs...), limit)
+		rows, err = s.db.Query(fmt.Sprintf(`SELECT COALESCE(referer, '') AS ref, COUNT(*) as c FROM request_events WHERE %s GROUP BY ref ORDER BY c DESC LIMIT ?`, where), args...)
 	} else {
-		rows, err = s.db.Query(`SELECT referer AS ref, COUNT(*) as c FROM request_events WHERE ts_unix BETWEEN ? AND ? AND referer IS NOT NULL AND referer != '' GROUP BY ref ORDER BY c DESC LIMIT ?`, from, to, limit)
+		whereNonEmpty := where + " AND referer IS NOT NULL AND referer != ''"
+		args := append(append([]interface{}{}, baseArgs...), limit)
+		rows, err = s.db.Query(fmt.Sprintf(`SELECT referer AS ref, COUNT(*) as c FROM request_events WHERE %s GROUP BY ref ORDER BY c DESC LIMIT ?`, whereNonEmpty), args...)
 	}
 	if err != nil {
 		return err
@@ -676,7 +718,8 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	rows, err := s.db.Query(`SELECT COALESCE(status, 0) AS status, COUNT(*) FROM request_events WHERE ts_unix BETWEEN ? AND ? GROUP BY COALESCE(status, 0) ORDER BY status`, from, to)
+	where, args := s.buildWhereClause(r, from, to)
+	rows, err := s.db.Query(fmt.Sprintf(`SELECT COALESCE(status, 0) AS status, COUNT(*) FROM request_events WHERE %s GROUP BY COALESCE(status, 0) ORDER BY status`, where), args...)
 	if err != nil {
 		return err
 	}
@@ -837,10 +880,14 @@ func (s *Server) handleTopUA(w http.ResponseWriter, r *http.Request) error {
 	limit := clampInt(r.URL.Query().Get("limit"), 20, 1, 200)
 	includeEmpty := r.URL.Query().Get("include_empty") == "true"
 	var rows *sql.Rows
+	where, baseArgs := s.buildWhereClause(r, from, to)
 	if includeEmpty {
-		rows, err = s.db.Query(`SELECT COALESCE(user_agent, '') AS ua, COUNT(*) as c FROM request_events WHERE ts_unix BETWEEN ? AND ? GROUP BY ua ORDER BY c DESC LIMIT ?`, from, to, limit)
+		args := append(append([]interface{}{}, baseArgs...), limit)
+		rows, err = s.db.Query(fmt.Sprintf(`SELECT COALESCE(user_agent, '') AS ua, COUNT(*) as c FROM request_events WHERE %s GROUP BY ua ORDER BY c DESC LIMIT ?`, where), args...)
 	} else {
-		rows, err = s.db.Query(`SELECT user_agent AS ua, COUNT(*) as c FROM request_events WHERE ts_unix BETWEEN ? AND ? AND user_agent IS NOT NULL AND user_agent != '' GROUP BY ua ORDER BY c DESC LIMIT ?`, from, to, limit)
+		whereNonEmpty := where + " AND user_agent IS NOT NULL AND user_agent != ''"
+		args := append(append([]interface{}{}, baseArgs...), limit)
+		rows, err = s.db.Query(fmt.Sprintf(`SELECT user_agent AS ua, COUNT(*) as c FROM request_events WHERE %s GROUP BY ua ORDER BY c DESC LIMIT ?`, whereNonEmpty), args...)
 	}
 	if err != nil {
 		return err
@@ -869,7 +916,9 @@ func (s *Server) handleTopUAFamilies(w http.ResponseWriter, r *http.Request) err
 		return err
 	}
 	limit := clampInt(r.URL.Query().Get("limit"), 20, 1, 200)
-	rows, err := s.db.Query(`SELECT user_agent FROM request_events WHERE ts_unix BETWEEN ? AND ? AND user_agent IS NOT NULL AND user_agent != ''`, from, to)
+	where, baseArgs := s.buildWhereClause(r, from, to)
+	where += " AND user_agent IS NOT NULL AND user_agent != ''"
+	rows, err := s.db.Query(fmt.Sprintf(`SELECT user_agent FROM request_events WHERE %s`, where), baseArgs...)
 	if err != nil {
 		return err
 	}

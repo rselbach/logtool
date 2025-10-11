@@ -82,6 +82,28 @@
     return Object.entries(params).map(([k,v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&')
   }
 
+  async function loadHosts(from, to){
+    try {
+      const sel = $('#hostFilter');
+      if (!sel) return;
+      const hosts = await jget(`/api/hosts?${qstr({from, to})}`);
+      const current = sel.value;
+      sel.innerHTML = '<option value="">All hosts</option>';
+      hosts.forEach(h => {
+        const opt = document.createElement('option');
+        opt.value = h;
+        opt.textContent = h;
+        if (h === current) opt.selected = true;
+        sel.appendChild(opt);
+      });
+      if (current && sel.value !== current) {
+        sel.value = current;
+      }
+    } catch (e) {
+      console.error('load hosts:', e);
+    }
+  }
+
   function inferRange(preset){
     const now = new Date();
     let from, to;
@@ -244,8 +266,14 @@
     if (bucketSel === 'auto') bucketSel = autoBucket(from, to);
     const tz = tzOffsetStr();
 
+    await loadHosts(from, to);
+    const hostSel = $('#hostFilter');
+    const host = hostSel ? hostSel.value : '';
+    const baseParams = host ? {from, to, host} : {from, to};
+    const qp = (extra = {}) => qstr({...baseParams, ...extra});
+
     // Summary
-    const summary = await jget(`/api/summary?${qstr({from, to})}`);
+    const summary = await jget(`/api/summary?${qp()}`);
     $('#sumRequests').textContent = number(summary.requests || 0);
     $('#sumUnique').textContent = number(summary.unique_remote || 0);
     $('#sumErrors').textContent = number(summary.errors || 0);
@@ -253,8 +281,8 @@
     const totalReq = summary.requests || 0;
 
     // Timeseries
-    const tsReq = await jget(`/api/timeseries/requests?${qstr({from,to,bucket:bucketSel,tz})}`);
-    const tsErr = await jget(`/api/timeseries/errors?${qstr({from,to,bucket:bucketSel,tz})}`);
+    const tsReq = await jget(`/api/timeseries/requests?${qp({bucket:bucketSel,tz})}`);
+    const tsErr = await jget(`/api/timeseries/errors?${qp({bucket:bucketSel,tz})}`);
     const reqLabels = tsReq.map(p => new Date(p.t).toLocaleString());
     const reqData   = tsReq.map(p => p.count);
     const errLabels = tsErr.map(p => new Date(p.t).toLocaleString());
@@ -265,10 +293,10 @@
     updateChart(errChart, errLabels, errData);
 
     // Top tables
-    const topPaths = await jget(`/api/top/paths?${qstr({from,to,limit:10})}`);
-    const topRef   = await jget(`/api/top/referrers?${qstr({from,to,limit:10})}`);
-    const uaFam    = await jget(`/api/top/ua_families?${qstr({from,to,limit:12})}`);
-    const uaTop    = await jget(`/api/top/ua?${qstr({from,to,limit:12})}`);
+    const topPaths = await jget(`/api/top/paths?${qp({limit:10})}`);
+    const topRef   = await jget(`/api/top/referrers?${qp({limit:10})}`);
+    const uaFam    = await jget(`/api/top/ua_families?${qp({limit:12})}`);
+    const uaTop    = await jget(`/api/top/ua?${qp({limit:12})}`);
     // Sorting helpers
     const sortNumDesc = (key) => (a,b)=> (b[key]||0) - (a[key]||0);
     const sortStrAsc = (key) => (a,b)=> (''+(a[key]||'')).localeCompare((''+(b[key]||'')));
@@ -362,7 +390,7 @@
     }));
 
     // Status breakdown
-    const stat = await jget(`/api/status?${qstr({from,to})}`);
+    const stat = await jget(`/api/status?${qp()}`);
     let statusRows = stat.slice().sort(sortNumDesc('count'));
     renderTable($('#statusTbl tbody'), statusRows, r => {
       const tr = document.createElement('tr');
@@ -384,7 +412,7 @@
 
     // Recent requests & errors
     await filterRequests({}, from, to);
-    const errs = await jget(`/api/errors?${qstr({from,to,limit:50})}`);
+    const errs = await jget(`/api/errors?${qp({limit:50})}`);
     renderTable($('#errorsTbl tbody'), errs, r => {
       const tr = document.createElement('tr');
       tr.appendChild(makeCell(fmtLocal(r.ts)));
@@ -426,6 +454,9 @@
     const from = fromSec ?? Math.floor(range.from.getTime()/1000);
     const to = toSec ?? Math.floor(range.to.getTime()/1000);
     const base = {from, to, limit:50, offset:0, ...extra};
+    const hostSel = $('#hostFilter');
+    const host = hostSel ? hostSel.value : '';
+    if (host) base.host = host;
     const rows = await jget(`/api/requests?${qstr(base)}`);
     renderTable($('#reqTbl tbody'), rows, r => {
       const tr = document.createElement('tr');
@@ -495,6 +526,12 @@
     });
      $('#refresh').addEventListener('click', () => toggleAutoRefresh());
     $('#bucket').addEventListener('change', (e) => { localStorage.setItem('lt_bucket', e.target.value); refresh(); });
+    const hostFilter = $('#hostFilter');
+    if (hostFilter) {
+      hostFilter.addEventListener('change', () => {
+        refresh();
+      });
+    }
     window.addEventListener('resize', () => {
       // Chart.js is responsive; no heavy redraw needed. Debounce optional updates.
       clearTimeout(window.__rt); window.__rt = setTimeout(()=>{ if(reqChart) reqChart.resize(); if(errChart) errChart.resize(); }, 150);

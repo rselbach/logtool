@@ -12,8 +12,8 @@ import (
 )
 
 // Access log is assumed to be Combined + XFF at the end:
-// $remote_addr - $remote_user [$time_local] "$request" $status $body_bytes_sent "$http_referer" "$http_user_agent" "$http_x_forwarded_for"
-var accessRe = regexp.MustCompile(`^(\S+)\s+\S+\s+\S+\s+\[([^\]]+)\]\s+"([A-Z]+)\s+([^\"]*?)\s+(\S+)"\s+(\d{3})\s+(\d+|-)\s+"([^"]*)"\s+"([^"]*)"\s+"([^"]*)"$`)
+// $remote_addr - $remote_user [$time_local] "$request" $status $body_bytes_sent "$http_referer" "$http_user_agent" "$http_x_forwarded_for" "$http_host"
+var accessRe = regexp.MustCompile(`^(\S+)\s+\S+\s+\S+\s+\[([^\]]+)\]\s+"([A-Z]+)\s+([^\"]*?)\s+(\S+)"\s+(\d{3})\s+(\d+|-)\s+"([^"]*)"\s+"([^"]*)"\s+"([^"]*)"(?:\s+"([^"]*)")?$`)
 
 // AccessRe exposes the compiled regex (for debug tools/tests only).
 func AccessRe() *regexp.Regexp { return accessRe }
@@ -49,6 +49,7 @@ type accessRecord struct {
 	bytes     int
 	referer   nullString
 	userAgent nullString
+	host      nullString
 }
 
 func parseAccessLine(line string, format AccessFormat, policy IPPolicy, h hasher) (accessRecord, bool) {
@@ -68,8 +69,8 @@ func ImportAccess(db *sql.DB, logName, path string, format AccessFormat, policy 
 	prevSt, havePrev, _ := getState(db, logName)
 	inode, _, _, _ := fileIdent(path)
 	// Prepare insert statement.
-	stmt, err := db.Prepare(`INSERT OR IGNORE INTO request_events (ts_unix, ts, remote_addr, xff, method, path, protocol, status, bytes_sent, referer, user_agent, raw_line)
-                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+	stmt, err := db.Prepare(`INSERT OR IGNORE INTO request_events (ts_unix, ts, remote_addr, xff, method, path, protocol, status, bytes_sent, referer, user_agent, host, raw_line)
+                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return err
 	}
@@ -81,7 +82,7 @@ func ImportAccess(db *sql.DB, logName, path string, format AccessFormat, policy 
 		if !ok {
 			t := fallbackAccessTime(line, format)
 			iso := t.Format(time.RFC3339)
-			res, err := stmt.Exec(t.Unix(), iso, nil, nil, nil, nil, nil, nil, nil, nil, nil, line)
+			res, err := stmt.Exec(t.Unix(), iso, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, line)
 			if err == nil {
 				if ra, _ := res.RowsAffected(); ra > 0 {
 					inserted += ra
@@ -103,7 +104,7 @@ func ImportAccess(db *sql.DB, logName, path string, format AccessFormat, policy 
 		} else {
 			remoteVal = rec.remote
 		}
-		res, err := stmt.Exec(ts.Unix(), iso, remoteVal, nullVal(rec.xff), rec.method, rec.path, rec.proto, rec.status, rec.bytes, nullVal(rec.referer), nullVal(rec.userAgent), line)
+		res, err := stmt.Exec(ts.Unix(), iso, remoteVal, nullVal(rec.xff), rec.method, rec.path, rec.proto, rec.status, rec.bytes, nullVal(rec.referer), nullVal(rec.userAgent), nullVal(rec.host), line)
 		if err == nil {
 			if ra, _ := res.RowsAffected(); ra > 0 {
 				inserted += ra
@@ -195,6 +196,11 @@ func parseNginxAccess(line string, policy IPPolicy, h hasher) (accessRecord, boo
 	if m[7] != "-" {
 		bytes, _ = strconv.Atoi(m[7])
 	}
+	hostVal := nullString{}
+	if len(m) > 11 {
+		hostVal = toNull(m[11])
+	}
+
 	return accessRecord{
 		ts:        tt.UTC(),
 		remote:    normalizeIP(m[1], policy, h),
@@ -206,6 +212,7 @@ func parseNginxAccess(line string, policy IPPolicy, h hasher) (accessRecord, boo
 		bytes:     bytes,
 		referer:   toNull(m[8]),
 		userAgent: toNull(m[9]),
+		host:      hostVal,
 	}, true
 }
 
@@ -260,6 +267,7 @@ func parseCaddyAccess(line string, policy IPPolicy, h hasher) (accessRecord, boo
 		bytes:     payload.Size,
 		referer:   toNull(headerValue(req.Headers, "Referer")),
 		userAgent: toNull(headerValue(req.Headers, "User-Agent")),
+		host:      toNull(headerValue(req.Headers, "Host")),
 	}, true
 }
 

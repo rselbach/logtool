@@ -18,6 +18,7 @@ Visit the dashboard at `http://localhost:8080/` to select ranges (including Go d
 
 - **Importer flags:** `--path` (repeatable), `--format` (`nginx` or `caddy`), `--policy` (`store`, `mask`, `hash`, `drop`), `--backfill` duration, and `--state-db` for tracking offsets.
 - **Server flags:** `--db`, `--listen`, `--tls-cert/key`, `--bearer`, `--basic-user/pass`, `--login-user`, `--login-pass-hash`, and `--session-secret`.
-- **API endpoints:** `/api/summary`, `/api/timeseries/{requests,errors}`, `/api/top/{paths,referrers,ua,ua_families}`, `/api/status`, `/api/requests`, `/api/errors`, and `/api/debug/dbinfo`.
+- **API endpoints:** `/api/summary`, `/api/timeseries/{requests,errors}`, `/api/top/{paths,referrers,ua,ua_families}`, `/api/status`, `/api/requests`, `/api/errors`, `/api/hosts`, and `/api/debug/dbinfo`.
+- **Host filtering:** All API endpoints support optional `?host=` query parameter to filter by virtual host. The `/api/hosts` endpoint returns a list of distinct hosts for the selected time range. For nginx logs to capture host information, include `$http_host` in your log format (e.g., `log_format logtool '$remote_addr - $remote_user [$time_local] "$request" $status $body_bytes_sent "$http_referer" "$http_user_agent" "$http_x_forwarded_for" "$http_host"';`). Caddy JSON logs automatically include host information.
 
 See `make help` for additional build targets and use `go test ./...` to run the suite.
