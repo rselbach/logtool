@@ -158,7 +158,7 @@
   let refreshInterval = null;
 
   // Chart.js helpers
-  let reqChart = null, errChart = null, uaFamChart = null;
+  let reqChart = null, errChart = null, uaFamChart = null, hostsChart = null;
   const chartOptions = (title) => ({
     responsive:true, maintainAspectRatio:false,
     plugins:{
@@ -184,14 +184,16 @@
     const cfg = {type:'pie', data:{labels:[], datasets:[{data:[], backgroundColor:[]} ]}, options:{responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}}};
     return new Chart(ctx, cfg);
   }
-  function updatePie(chart, labels, data){
+  function updatePie(chart, labels, data, legendId){
     const palette = ['#5aa6ff','#ff7a7a','#12c48b','#ffba3a','#a77bff','#ff8ec0','#33c3ff','#ffd166'];
     chart.data.labels = labels;
     chart.data.datasets[0].data = data;
     chart.data.datasets[0].backgroundColor = labels.map((_,i)=>palette[i%palette.length]);
     chart.update('none');
     // Custom legend with colored text
-    renderLegend('legendUAFam', labels, chart.data.datasets[0].backgroundColor);
+    if (legendId) {
+      renderLegend(legendId, labels, chart.data.datasets[0].backgroundColor);
+    }
   }
 
   function renderLegend(id, labels, colors){
@@ -297,6 +299,7 @@
     const topRef   = await jget(`/api/top/referrers?${qp({limit:10})}`);
     const uaFam    = await jget(`/api/top/ua_families?${qp({limit:12})}`);
     const uaTop    = await jget(`/api/top/ua?${qp({limit:12})}`);
+    const topHosts = await jget(`/api/top/hosts?${qp({limit:12})}`);
     // Sorting helpers
     const sortNumDesc = (key) => (a,b)=> (b[key]||0) - (a[key]||0);
     const sortStrAsc = (key) => (a,b)=> (''+(a[key]||'')).localeCompare((''+(b[key]||'')));
@@ -370,7 +373,7 @@
       const others = uaFam.slice(topN).reduce((acc,r)=>acc+r.count,0);
       if (others>0) { labels.push('Other'); data.push(others); }
       if (!uaFamChart) uaFamChart = ensurePie($('#chartUAFam').getContext('2d'));
-      updatePie(uaFamChart, labels, data);
+      updatePie(uaFamChart, labels, data, 'legendUAFam');
     }
     let uaTopRows = uaTop.slice().sort(sortNumDesc('count'));
     renderTable($('#uaTop tbody'), uaTopRows, r => {
@@ -388,6 +391,39 @@
       tr.appendChild(makeCell(number(r.count),'num'));
       return tr;
     }));
+
+    // Hosts with pct
+    let hostsRows = topHosts.map(r => ({host:r.host, count:r.count, pct: totalReq>0 ? (r.count/totalReq)*100 : 0})).sort(sortNumDesc('count'));
+    renderTable($('#hostsTable tbody'), hostsRows, r => {
+      const tr = document.createElement('tr');
+      tr.appendChild(makeCell(r.host));
+      tr.appendChild(makeCell(number(r.count),'num'));
+      const pct = (r.pct||0).toFixed(1);
+      tr.appendChild(makeCell(pct+'%','pct'));
+      return tr;
+    });
+    bindSortHeaders('hostsTable', hostsRows, {
+      host:(dir)=> (a,b)=> dir==='asc'? sortStrAsc('host')(a,b): sortStrAsc('host')(b,a),
+      count:(dir)=> (a,b)=> dir==='asc'? -sortNumDesc('count')(a,b): sortNumDesc('count')(a,b),
+      pct:(dir)=> (a,b)=> dir==='asc'? -sortNumDesc('pct')(a,b): sortNumDesc('pct')(a,b)
+    }, 'count', 'desc', (rows)=> renderTable($('#hostsTable tbody'), rows, r=>{
+      const tr = document.createElement('tr');
+      tr.appendChild(makeCell(r.host));
+      tr.appendChild(makeCell(number(r.count),'num'));
+      const pct = (r.pct||0).toFixed(1);
+      tr.appendChild(makeCell(pct+'%','pct'));
+      return tr;
+    }));
+    // Pie: top 6 hosts + Other
+    {
+      const topN = 6;
+      const labels = topHosts.slice(0, topN).map(r=>r.host);
+      const data = topHosts.slice(0, topN).map(r=>r.count);
+      const others = topHosts.slice(topN).reduce((acc,r)=>acc+r.count,0);
+      if (others>0) { labels.push('Other'); data.push(others); }
+      if (!hostsChart) hostsChart = ensurePie($('#chartHosts').getContext('2d'));
+      updatePie(hostsChart, labels, data, 'legendHosts');
+    }
 
     // Status breakdown
     const stat = await jget(`/api/status?${qp()}`);
@@ -534,7 +570,7 @@
     }
     window.addEventListener('resize', () => {
       // Chart.js is responsive; no heavy redraw needed. Debounce optional updates.
-      clearTimeout(window.__rt); window.__rt = setTimeout(()=>{ if(reqChart) reqChart.resize(); if(errChart) errChart.resize(); }, 150);
+      clearTimeout(window.__rt); window.__rt = setTimeout(()=>{ if(reqChart) reqChart.resize(); if(errChart) errChart.resize(); if(uaFamChart) uaFamChart.resize(); if(hostsChart) hostsChart.resize(); }, 150);
     });
 
      refresh().then(() => {

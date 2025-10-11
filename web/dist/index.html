@@ -106,6 +106,22 @@
         </div>
       </section>
 
+      <section class="grid2">
+        <div class="panel">
+          <div class="panel-header">Hosts by Traffic</div>
+          <div class="chart"><canvas id="chartHosts"></canvas></div>
+          <div class="legend" id="legendHosts"></div>
+        </div>
+        <div class="panel">
+          <div class="panel-header">Top Hosts</div>
+          <table class="table" id="hostsTable"><thead><tr>
+            <th class="sortable" data-key="host">Host</th>
+            <th class="num sortable" data-key="count">Count</th>
+            <th class="num sortable" data-key="pct">%</th>
+          </tr></thead><tbody></tbody></table>
+        </div>
+      </section>
+
       <section class="panel">
         <div class="panel-header">Status Breakdown</div>
         <table class="table" id="statusTbl"><thead><tr>

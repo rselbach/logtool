@@ -57,6 +57,7 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/top/referrers", s.wrap(s.handleTopReferrers))
 	mux.HandleFunc("/api/top/ua", s.wrap(s.handleTopUA))
 	mux.HandleFunc("/api/top/ua_families", s.wrap(s.handleTopUAFamilies))
+	mux.HandleFunc("/api/top/hosts", s.wrap(s.handleTopHosts))
 	mux.HandleFunc("/api/status", s.wrap(s.handleStatus))
 	mux.HandleFunc("/api/requests", s.wrap(s.handleRequests))
 	mux.HandleFunc("/api/errors", s.wrap(s.handleErrors))
@@ -956,6 +957,38 @@ func (s *Server) handleTopUAFamilies(w http.ResponseWriter, r *http.Request) err
 		items = items[:limit]
 	}
 	return writeJSON(w, items)
+}
+
+// handleTopHosts returns the top hosts by request count.
+func (s *Server) handleTopHosts(w http.ResponseWriter, r *http.Request) error {
+	from, to, err := s.parseRange(r)
+	if err != nil {
+		return err
+	}
+	limit := clampInt(r.URL.Query().Get("limit"), 20, 1, 200)
+	where, baseArgs := s.buildWhereClause(r, from, to)
+	// group by host, treating NULL/empty as 'Unknown'
+	query := fmt.Sprintf(`SELECT COALESCE(NULLIF(host, ''), 'Unknown') AS host, COUNT(*) as c FROM request_events WHERE %s GROUP BY host ORDER BY c DESC LIMIT ?`, where)
+	args := append(append([]interface{}{}, baseArgs...), limit)
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	type Row struct {
+		Host  string `json:"host"`
+		Count int64  `json:"count"`
+	}
+	var out []Row
+	for rows.Next() {
+		var host string
+		var c int64
+		if err := rows.Scan(&host, &c); err != nil {
+			return err
+		}
+		out = append(out, Row{Host: host, Count: c})
+	}
+	return writeJSON(w, out)
 }
 
 // Debug: return DB path and basic counts/ranges to help diagnose empty results.
