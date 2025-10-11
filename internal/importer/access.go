@@ -222,6 +222,7 @@ type caddyAccessPayload struct {
 		ClientIP string              `json:"client_ip"`
 		Proto    string              `json:"proto"`
 		Method   string              `json:"method"`
+		Host     string              `json:"host"`
 		URI      string              `json:"uri"`
 		Headers  map[string][]string `json:"headers"`
 	} `json:"request"`
@@ -267,7 +268,7 @@ func parseCaddyAccess(line string, policy IPPolicy, h hasher) (accessRecord, boo
 		bytes:     payload.Size,
 		referer:   toNull(headerValue(req.Headers, "Referer")),
 		userAgent: toNull(headerValue(req.Headers, "User-Agent")),
-		host:      toNull(headerValue(req.Headers, "Host")),
+		host:      toNull(req.Host),
 	}, true
 }
 
