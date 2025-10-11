@@ -321,8 +321,12 @@ func (s *Server) buildWhereClause(r *http.Request, from, to int64) (string, []in
 	where := "ts_unix BETWEEN ? AND ?"
 	args := []interface{}{from, to}
 	if host := strings.TrimSpace(r.URL.Query().Get("host")); host != "" {
-		where += " AND host = ?"
-		args = append(args, host)
+		if host == "Unknown" {
+			where += " AND (host IS NULL OR host = '')"
+		} else {
+			where += " AND host = ?"
+			args = append(args, host)
+		}
 	}
 	return where, args
 }
@@ -332,7 +336,7 @@ func (s *Server) handleHosts(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	rows, err := s.db.Query(`SELECT DISTINCT host FROM request_events WHERE ts_unix BETWEEN ? AND ? AND host IS NOT NULL AND host != '' ORDER BY host`, from, to)
+	rows, err := s.db.Query(`SELECT DISTINCT COALESCE(NULLIF(host, ''), 'Unknown') AS host FROM request_events WHERE ts_unix BETWEEN ? AND ? ORDER BY host`, from, to)
 	if err != nil {
 		return err
 	}
