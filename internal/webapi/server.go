@@ -318,7 +318,8 @@ func writeJSON(w http.ResponseWriter, v interface{}) error {
 }
 
 func (s *Server) buildWhereClause(r *http.Request, from, to int64) (string, []interface{}) {
-	where, args := s.buildWhereClause(r, from, to)
+	where := "ts_unix BETWEEN ? AND ?"
+	args := []interface{}{from, to}
 	if host := strings.TrimSpace(r.URL.Query().Get("host")); host != "" {
 		where += " AND host = ?"
 		args = append(args, host)
