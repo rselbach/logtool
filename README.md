@@ -1,7 +1,7 @@
 Logtool — Simple Site Monitoring (SQLite)
 
 Components in this repo:
-- `cmd/importer`: Go CLI that imports `nginx` `access.log` and `error.log` into a local SQLite DB.
+- `cmd/importer`: Go CLI that imports Caddy (default) or nginx access/error logs into a local SQLite DB.
 - `internal/db`: DB open + auto-migrations.
 - `internal/importer`: Incremental log readers + parsers.
 - `cmd/server`: Minimal JSON web API on top of the DB (for the future dashboard).
@@ -115,7 +115,7 @@ Examples
 - Install with custom data dir and service user:
   - `sudo make install DATADIR=/srv/logtool RUN_USER=logtool RUN_GROUP=logtool`
 - Generate systemd drop-ins that set DB path, static dir, address/timezone, and use explicit user/group instead of DynamicUser:
-  - `sudo make systemd-config DATADIR=/srv/logtool RUN_USER=logtool RUN_GROUP=logtool SUPP_GROUPS=adm DYNAMIC_USER=no ACCESS_LOG=/var/log/nginx/site-access.log ERROR_LOG=/var/log/nginx/site-error.log`
+- `sudo make systemd-config DATADIR=/srv/logtool RUN_USER=logtool RUN_GROUP=logtool SUPP_GROUPS=adm DYNAMIC_USER=no ACCESS_LOG=/var/log/caddy/access.log ERROR_LOG=/var/log/caddy/error.log`
 - Then enable services:
   - `sudo make systemd-enable`
 
@@ -126,7 +126,7 @@ Systemd timer for importer (replaces cron)
   - `install -Dm644 deploy/systemd/logtool-importer.service /etc/systemd/system/logtool-importer.service`
   - `install -Dm644 deploy/systemd/logtool-importer.timer /etc/systemd/system/logtool-importer.timer`
   - `install -Dm644 deploy/systemd/importer.env.example /etc/logtool/importer.env`
-  - Edit `/etc/logtool/importer.env` to point to your nginx logs and desired IP policy.
+  - Edit `/etc/logtool/importer.env` to point to your log paths (e.g., `/var/log/caddy/*.log`) and desired IP policy. Set `LOGTOOL_FORMAT=nginx` if you still ingest nginx logs.
 - Enable and start:
   - `systemctl daemon-reload`
   - `systemctl enable --now logtool-importer.timer`
@@ -141,6 +141,7 @@ Flags
 - `-db`: SQLite database path (default `./monitor.db`).
 - `-access`: Access log path (default `./access.log`).
 - `-error`: Error log path (default `./error.log`).
+- `-format`: Log format (`caddy` default; set `nginx` for legacy logs). Env: `LOGTOOL_FORMAT`.
 - `-ip-policy`: `store|mask|hash|drop` (default `mask`).
 - `-ip-salt`: salt for `hash` policy (env `IP_SALT` also honored).
 - `-backfill-access`: comma-separated files or globs for historical access logs; supports `.gz`. Example: `-backfill-access "/var/log/nginx/access.log-*,/var/log/nginx/site/*access*.gz"`
@@ -150,9 +151,8 @@ Flags
 Notes
 - Import is incremental: it records byte offsets + inodes in `import_state` to avoid re-reading lines across runs and handle truncation/rotation (active file only initially).
 - Backfill imports: use the `-backfill-*` flags to ingest rotated and gzipped logs once. Duplicates are ignored using a unique index on `raw_line`.
-- Access format assumed: Combined Log Format plus `"$http_x_forwarded_for"` as a final quoted field.
-  Example: `IP - - [time] "METHOD PATH PROTO" status bytes "referer" "ua" "xff"`
-- Error format assumed: `YYYY/MM/DD HH:MM:SS [level] pid#tid: message`.
+- Access format defaults to Caddy’s structured JSON logs (see `logs/caddy-access.log` for an example). Use `-format nginx` if your files emit the Combined Log Format with a trailing `"$http_x_forwarded_for"` field.
+- Error format defaults to Caddy’s structured logs; switch to `-format nginx` to parse traditional `YYYY/MM/DD HH:MM:SS [level] pid#tid: message` lines.
 
 Future work
 - Backfill rotated logs (optionally `.1` / dated / gz files).
