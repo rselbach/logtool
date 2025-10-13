@@ -3,7 +3,7 @@
 ## Build
 Use Makefile targets:
 - `make build` (all binaries to ./bin)
-- `make build-server`, `make build-importer`, `make build-pwhash` (selective)
+- `make build-server`, `make build-importer` (selective)
 
 ## Install Targets
 - `make install` (PREFIX=/usr/local default) copies binaries & UI assets.
@@ -18,20 +18,47 @@ Importer (periodic or timer):
 ./bin/logtool-importer --db /var/lib/logtool/monitor.db \
   --access /var/log/nginx/access.log --format nginx --ip-policy mask
 ```
-Server:
+Server (with GitHub OAuth):
+```
+export GITHUB_CLIENT_ID=your_client_id
+export GITHUB_CLIENT_SECRET=your_client_secret
+export GITHUB_CALLBACK_URL=https://your-domain.com/auth/github/callback
+export LOGTOOL_SESSION_SECRET=$(openssl rand -base64 32)
+export LOGTOOL_SECURE_COOKIES=true
+
+./bin/logtool-server --db /var/lib/logtool/monitor.db \
+  --static /usr/local/share/logtool/web --addr :8080
+```
+
+Server (with Bearer token for API-only):
 ```
 ./bin/logtool-server --db /var/lib/logtool/monitor.db \
   --static /usr/local/share/logtool/web --addr :8080 \
-  --basic-user admin --basic-pass '...'
-```
-Password hash generation:
-```
-./bin/logtool-pwhash
+  --auth-token your_secret_token
 ```
 
-## Environment Variables (typical)
-- LOGTOOL_DB, LOGTOOL_ACCESS, LOGTOOL_ERROR, LOGTOOL_FORMAT
-- IP_SALT (salt for hash policy) passed to hasher
+## Environment Variables
+
+### Server
+**GitHub OAuth (recommended for interactive login):**
+- `GITHUB_CLIENT_ID` - GitHub OAuth app client ID
+- `GITHUB_CLIENT_SECRET` - GitHub OAuth app client secret
+- `GITHUB_CALLBACK_URL` - OAuth callback URL (e.g., `https://domain.com/auth/github/callback`)
+- `LOGTOOL_SESSION_SECRET` - Random secret for signing session cookies (base64 encoded)
+- `LOGTOOL_SESSION_TTL` - Session duration (default: `12h`)
+- `LOGTOOL_SECURE_COOKIES` - Set to `true` for HTTPS deployments
+
+**API Authentication:**
+- `LOGTOOL_TOKEN` or `LOGTOOL_TOKENS` - Bearer token(s) for API clients
+- `LOGTOOL_USER`, `LOGTOOL_PASS` - Basic auth credentials
+
+**General:**
+- `LOGTOOL_DB` - Database path
+- `LOGTOOL_STATIC` - Static UI directory path
+
+### Importer
+- `LOGTOOL_DB`, `LOGTOOL_ACCESS`, `LOGTOOL_ERROR`, `LOGTOOL_FORMAT`
+- `IP_SALT` - Salt for hash IP policy
 
 ## Scheduling Importer
 Recommended: systemd timer or cron running importer every minute or 5 minutes; importer performs incremental tail and exits quickly.
@@ -64,6 +91,43 @@ Cold backup: stop importer & server, copy DB file(s).
 Hot backup: `sqlite3 monitor.db ".backup backup.db"` (ensure sqlite3 installed). Include verifying `.schema` after restore.
 
 ## Security Deployment Notes
-- Terminate TLS at nginx (nginx-install target). Ensure proper HSTS and secure cookie flags if served over HTTPS (could patch code to add Secure attribute).
-- Limit firewall to expose only server port or proxy.
+
+### HTTPS/TLS Setup (Required for GitHub OAuth)
+1. **Terminate TLS at nginx** using the provided config (`deploy/nginx/logtool.conf`)
+2. **Enable secure cookies** by setting `LOGTOOL_SECURE_COOKIES=true`
+3. **Configure GitHub OAuth callback** to use HTTPS URL
+4. **Set HSTS header** in nginx for additional security
+
+Example nginx configuration snippet:
+```nginx
+server {
+  listen 443 ssl http2;
+  server_name your-domain.com;
+  
+  ssl_certificate /path/to/fullchain.pem;
+  ssl_certificate_key /path/to/privkey.pem;
+  
+  add_header Strict-Transport-Security "max-age=31536000" always;
+  
+  location /monitor/ {
+    proxy_pass http://127.0.0.1:8080/;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto $scheme;
+  }
+}
+```
+
+### GitHub OAuth App Configuration
+1. Go to https://github.com/settings/developers
+2. Create new OAuth App with:
+   - Homepage URL: `https://your-domain.com`
+   - Callback URL: `https://your-domain.com/auth/github/callback` (adjust for proxy path)
+3. Copy Client ID and generate Client Secret
+4. Configure in `/etc/logtool/server.env` (see `deploy/systemd/server.env.example`)
+
+### Additional Security
+- Restrict file permissions on SQLite DB and config files
+- Limit firewall to expose only nginx (port 443), not backend server directly
+- Periodically rotate bearer tokens and session secrets (requires restart)
+- Keep dependencies updated with `go get -u && go mod tidy`
 

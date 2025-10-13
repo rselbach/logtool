@@ -9,6 +9,7 @@
   <body>
     <header class="topbar">
       <h1>Logtool</h1>
+      <div class="topbar-right">
       <nav class="controls">
         <select id="rangePreset">
           <option value="24h">Last 24 hours</option>
@@ -33,6 +34,17 @@
         </select>
          <button id="refresh">Live</button>
       </nav>
+      <div class="user-badge hidden" id="userBadge" aria-live="polite">
+        <button id="userBadgeToggle" class="user-badge-btn" type="button" aria-haspopup="menu" aria-expanded="false">
+          <img id="userAvatar" class="user-avatar hidden" alt="" width="32" height="32" decoding="async">
+          <span id="userEmail" class="user-email"></span>
+          <span class="user-caret" aria-hidden="true">▾</span>
+        </button>
+        <div id="userMenu" class="user-menu hidden" role="menu">
+          <a href="/logout" class="user-menu-item" role="menuitem">Log out</a>
+        </div>
+      </div>
+      </div>
     </header>
 
     <main class="content">

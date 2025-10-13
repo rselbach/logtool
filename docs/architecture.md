@@ -23,14 +23,13 @@ Logtool ingests web server (nginx or Caddy) access/error logs into a local SQLit
 
 ### Binaries
 - cmd/importer: Incrementally ingests logs using inode+offset tracking.
-- cmd/server: Serves JSON endpoints, does aggregations/time series, optional auth, static file serving.
-- cmd/pwhash: Generates bcrypt password hashes for form login configuration.
+- cmd/server: Serves JSON endpoints, does aggregations/time series, GitHub OAuth/Bearer/Basic auth, static file serving.
 - cmd/parsecheck (utility): Assists with regex / parsing validation.
 
 ### Core Packages
 - internal/db: Connection setup, migrations, schema evolution helpers (column add, dedupe unique indexes).
 - internal/importer: Parsing, IP privacy normalization, incremental & backfill ingestion.
-- internal/webapi: HTTP routing, auth (Basic, Bearer, session), query parsing, aggregations, classification helpers.
+- internal/webapi: HTTP routing, auth (GitHub OAuth, Bearer, Basic), session cookies, query parsing, aggregations, classification helpers.
 - internal/util: Hashing for IP policies (SHA256 + salt) (see Hasher interface expectation in importer).
 
 ## Data Flow

@@ -104,6 +104,80 @@
     }
   }
 
+  let userMenuOpen = false;
+  let userMenuBound = false;
+
+  function setUserMenuVisible(show){
+    const menu = $('#userMenu');
+    const toggle = $('#userBadgeToggle');
+    if (!menu || !toggle) return;
+    userMenuOpen = show;
+    toggle.setAttribute('aria-expanded', show ? 'true' : 'false');
+    menu.classList.toggle('hidden', !show);
+  }
+
+  function bindUserMenu(){
+    if (userMenuBound) return;
+    const toggle = $('#userBadgeToggle');
+    const menu = $('#userMenu');
+    const badge = $('#userBadge');
+    if (!toggle || !badge || !menu) return;
+    toggle.addEventListener('click', (e) => {
+      e.stopPropagation();
+      setUserMenuVisible(!userMenuOpen);
+    });
+    document.addEventListener('click', (e) => {
+      if (!userMenuOpen) return;
+      if (badge && !badge.contains(e.target)) {
+        setUserMenuVisible(false);
+      }
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        setUserMenuVisible(false);
+      }
+    });
+    userMenuBound = true;
+  }
+
+  async function loadSessionInfo(){
+    const badge = $('#userBadge');
+    if (!badge) return;
+    try {
+      const info = await jget('/api/session') || {};
+      const label = ((info.email || info.user || '') + '').trim();
+      const emailEl = $('#userEmail');
+      const avatar = $('#userAvatar');
+      if (!label) {
+        badge.classList.add('hidden');
+        setUserMenuVisible(false);
+        if (avatar) {
+          avatar.classList.add('hidden');
+          avatar.removeAttribute('src');
+        }
+        if (emailEl) emailEl.textContent = '';
+        return;
+      }
+      bindUserMenu();
+      setUserMenuVisible(false);
+      if (emailEl) {
+        emailEl.textContent = label;
+      }
+      if (avatar) {
+        if (info.avatar_url) {
+          avatar.src = info.avatar_url;
+          avatar.classList.remove('hidden');
+        } else {
+          avatar.classList.add('hidden');
+          avatar.removeAttribute('src');
+        }
+      }
+      badge.classList.remove('hidden');
+    } catch (e) {
+      console.error('load session:', e);
+    }
+  }
+
   function inferRange(preset){
     const now = new Date();
     let from, to;
@@ -115,10 +189,10 @@
       const input = $('#duration');
       const ms = parseGoDuration(input.value);
       if (!ms) {
-        alert('Enter a valid duration (e.g. 5m, 1h, 1d).');
-        if (input) input.focus();
+        if (input) input.classList.add('input-error');
         return null;
       }
+      if (input) input.classList.remove('input-error');
       to = now;
       from = new Date(now.getTime() - ms);
     }
@@ -511,6 +585,7 @@
   }
 
   function init(){
+    loadSessionInfo();
     // Restore saved UI settings
     const savedPreset = localStorage.getItem('lt_range_preset');
     const savedBucket = localStorage.getItem('lt_bucket');
@@ -520,6 +595,12 @@
     durationInput.addEventListener('change', () => {
       const val = durationInput.value.trim();
       localStorage.setItem('lt_duration', val);
+      const valid = parseGoDuration(val);
+      if (!valid) {
+        durationInput.classList.add('input-error');
+        return;
+      }
+      durationInput.classList.remove('input-error');
       if ($('#rangePreset').value === 'duration') refresh();
     });
     durationInput.addEventListener('keydown', (e) => {
@@ -527,6 +608,12 @@
         e.preventDefault();
         const val = durationInput.value.trim();
         localStorage.setItem('lt_duration', val);
+        const valid = parseGoDuration(val);
+        if (!valid) {
+          durationInput.classList.add('input-error');
+          return;
+        }
+        durationInput.classList.remove('input-error');
         if ($('#rangePreset').value === 'duration') refresh();
       }
     });
@@ -553,9 +640,14 @@
       setCustomInputsVisible(preset);
       if (preset === 'duration') {
         const val = $('#duration').value.trim();
-        if (parseGoDuration(val)) {
-          refresh();
+        const valid = parseGoDuration(val);
+        const durationInput = $('#duration');
+        if (!valid) {
+          if (durationInput) durationInput.classList.add('input-error');
+          return;
         }
+        if (durationInput) durationInput.classList.remove('input-error');
+        refresh();
       } else if (preset !== 'custom') {
         refresh();
       }
