@@ -17,10 +17,10 @@
           <option value="2w">Last 2 weeks</option>
           <option value="1m">Last 1 month</option>
           <option value="today">Today</option>
-          <option value="duration">Duration…</option>
-          <option value="custom">Custom…</option>
+          <option value="duration">Duration...</option>
+          <option value="custom">Custom...</option>
         </select>
-        <input type="text" id="duration" class="hidden" placeholder="Go duration (e.g. 5m)" aria-label="Duration">
+        <input type="text" id="duration" class="hidden" placeholder="e.g. 5m, 2h, 1d" aria-label="Duration">
         <input type="datetime-local" id="from" class="hidden">
         <input type="datetime-local" id="to" class="hidden">
         <select id="bucket">
@@ -32,8 +32,9 @@
         <select id="hostFilter">
           <option value="">All hosts</option>
         </select>
-         <button id="refresh">Live</button>
+        <button id="refresh" data-shortcut="P">Live</button>
       </nav>
+      <span class="last-updated" id="lastUpdated"></span>
       <div class="user-badge hidden" id="userBadge" aria-live="polite">
         <button id="userBadgeToggle" class="user-badge-btn" type="button" aria-haspopup="menu" aria-expanded="false">
           <img id="userAvatar" class="user-avatar hidden" alt="" width="32" height="32" decoding="async">
@@ -47,23 +48,23 @@
       </div>
     </header>
 
-    <main class="content">
+    <main class="content" id="mainContent">
       <section class="cards" id="summary">
         <div class="card">
           <div class="label">Requests</div>
-          <div class="value" id="sumRequests">–</div>
+          <div class="value" id="sumRequests">-</div>
         </div>
         <div class="card">
           <div class="label">Unique Remote</div>
-          <div class="value" id="sumUnique">–</div>
+          <div class="value" id="sumUnique">-</div>
         </div>
         <div class="card">
           <div class="label">Errors</div>
-          <div class="value" id="sumErrors">–</div>
+          <div class="value" id="sumErrors">-</div>
         </div>
         <div class="card">
           <div class="label">Last Request</div>
-          <div class="value small" id="sumLast">–</div>
+          <div class="value small" id="sumLast">-</div>
         </div>
       </section>
 
@@ -77,7 +78,7 @@
           <div class="chart"><canvas id="chartErrors"></canvas></div>
         </div>
         <div class="panel">
-          <div class="panel-header">UA Families (Pie)</div>
+          <div class="panel-header">UA Families</div>
           <div class="chart"><canvas id="chartUAFam"></canvas></div>
           <div class="legend" id="legendUAFam"></div>
         </div>
@@ -91,72 +92,89 @@
         </div>
         <div class="panel">
           <div class="panel-header">Top Hosts</div>
-          <table class="table" id="hostsTable"><thead><tr>
-            <th class="sortable" data-key="host">Host</th>
-            <th class="num sortable" data-key="count">Count</th>
-            <th class="num sortable" data-key="pct">%</th>
-          </tr></thead><tbody></tbody></table>
+          <div class="table-wrapper">
+            <table class="table" id="hostsTable"><thead><tr>
+              <th class="sortable" data-key="host">Host</th>
+              <th class="num sortable" data-key="count">Count</th>
+              <th class="num sortable" data-key="pct">%</th>
+            </tr></thead><tbody></tbody></table>
+          </div>
         </div>
       </section>
 
       <section class="grid2">
         <div class="panel">
           <div class="panel-header">Top Paths</div>
-          <table class="table" id="topPaths"><thead><tr>
-            <th class="sortable" data-key="path">Path</th>
-            <th class="num sortable" data-key="count">Count</th>
-          </tr></thead><tbody></tbody></table>
+          <div class="table-wrapper">
+            <table class="table" id="topPaths"><thead><tr>
+              <th class="sortable" data-key="path">Path</th>
+              <th class="num sortable" data-key="count">Count</th>
+            </tr></thead><tbody></tbody></table>
+          </div>
         </div>
         <div class="panel">
           <div class="panel-header">Top Referrers</div>
-          <table class="table" id="topRef"><thead><tr>
-            <th class="sortable" data-key="referrer">Referrer</th>
-            <th class="num sortable" data-key="count">Count</th>
-          </tr></thead><tbody></tbody></table>
+          <div class="table-wrapper">
+            <table class="table" id="topRef"><thead><tr>
+              <th class="sortable" data-key="referrer">Referrer</th>
+              <th class="num sortable" data-key="count">Count</th>
+            </tr></thead><tbody></tbody></table>
+          </div>
         </div>
       </section>
 
       <section class="grid2">
         <div class="panel">
           <div class="panel-header">UA Families</div>
-          <table class="table" id="uaFamilies"><thead><tr>
-            <th class="sortable" data-key="family">Family</th>
-            <th class="num sortable" data-key="count">Count</th>
-            <th class="num sortable" data-key="pct">%</th>
-          </tr></thead><tbody></tbody></table>
+          <div class="table-wrapper">
+            <table class="table" id="uaFamilies"><thead><tr>
+              <th class="sortable" data-key="family">Family</th>
+              <th class="num sortable" data-key="count">Count</th>
+              <th class="num sortable" data-key="pct">%</th>
+            </tr></thead><tbody></tbody></table>
+          </div>
         </div>
         <div class="panel">
           <div class="panel-header">Top User Agents</div>
-          <table class="table" id="uaTop"><thead><tr>
-            <th class="sortable" data-key="ua">User Agent</th>
-            <th class="num sortable" data-key="count">Count</th>
-          </tr></thead><tbody></tbody></table>
+          <div class="table-wrapper">
+            <table class="table" id="uaTop"><thead><tr>
+              <th class="sortable" data-key="ua">User Agent</th>
+              <th class="num sortable" data-key="count">Count</th>
+            </tr></thead><tbody></tbody></table>
+          </div>
         </div>
       </section>
 
       <section class="panel">
         <div class="panel-header">Status Breakdown</div>
-        <table class="table" id="statusTbl"><thead><tr>
-          <th class="sortable" data-key="status">Status</th>
-          <th class="num sortable" data-key="count">Count</th>
-        </tr></thead><tbody></tbody></table>
+        <div class="table-wrapper">
+          <table class="table" id="statusTbl"><thead><tr>
+            <th class="sortable" data-key="status">Status</th>
+            <th class="num sortable" data-key="count">Count</th>
+          </tr></thead><tbody></tbody></table>
+        </div>
       </section>
 
       <section class="panel">
         <div class="panel-header">Recent Requests</div>
-        <table class="table" id="reqTbl"><thead><tr>
-          <th>Time</th><th>Remote</th><th>Method</th><th>Path</th><th>Status</th><th class="num">Bytes</th><th>Referer</th><th>User-Agent</th>
-        </tr></thead><tbody></tbody></table>
+        <div class="table-wrapper" style="max-height:500px">
+          <table class="table" id="reqTbl"><thead><tr>
+            <th>Time</th><th>Remote</th><th>Method</th><th>Path</th><th>Status</th><th class="num">Bytes</th><th>Referer</th><th>User-Agent</th>
+          </tr></thead><tbody></tbody></table>
+        </div>
       </section>
 
       <section class="panel">
         <div class="panel-header">Recent Errors</div>
-        <table class="table" id="errorsTbl"><thead><tr><th>Time</th><th>Level</th><th>PID</th><th>TID</th><th>Message</th></tr></thead><tbody></tbody></table>
+        <div class="table-wrapper" style="max-height:500px">
+          <table class="table" id="errorsTbl"><thead><tr><th>Time</th><th>Level</th><th>PID</th><th>TID</th><th>Message</th></tr></thead><tbody></tbody></table>
+        </div>
       </section>
     </main>
 
     <footer class="foot">Built with Logtool</footer>
+    <div class="toast-container" id="toastContainer"></div>
     <script src="./vendor/chart.umd.min.js"></script>
     <script src="./app.js"></script>
   </body>
-  </html>
+</html>
