@@ -434,7 +434,15 @@
             borderColor: '#252b36',
             borderWidth: 1,
             padding: 12,
-            cornerRadius: 8
+            cornerRadius: 8,
+            callbacks: {
+              label: function(context) {
+                const value = context.parsed;
+                const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                const pct = total > 0 ? ((value / total) * 100).toFixed(1) : 0;
+                return `${number(value)} (${pct}%)`;
+              }
+            }
           }
         }
       }
